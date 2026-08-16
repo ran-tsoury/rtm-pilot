@@ -11,10 +11,21 @@ export default function Home() {
         <h1>RTM PILOT</h1>
         <p>בחר את סוג הפעולה</p>
 
-        <button onClick={() => setScreen("new")}>תהליך חדש</button>
-        <button onClick={() => setScreen("sos")}>SOS</button>
-        <button onClick={() => setScreen("checkin")}>Check-in</button>
-        <button onClick={() => setScreen("home")}>חזרה</button>
+        <button onClick={() => setScreen("new")}>
+          תהליך חדש
+        </button>
+
+        <button onClick={() => setScreen("sos")}>
+          SOS
+        </button>
+
+        <button onClick={() => setScreen("checkin")}>
+          Check-in
+        </button>
+
+        <button onClick={() => setScreen("home")}>
+          חזרה
+        </button>
 
         {screen === "new" && <p>תהליך חדש — המודול מוכן לחיבור.</p>}
         {screen === "sos" && <p>SOS — המודול מוכן לחיבור.</p>}
@@ -27,7 +38,10 @@ export default function Home() {
     <main>
       <h1>RTM PILOT</h1>
       <p>מערכת ההפעלה שלך לתהליך שינוי</p>
-      <button onClick={() => setScreen("start")}>התחל</button>
+
+      <button onClick={() => setScreen("start")}>
+        התחל
+      </button>
     </main>
   );
         }
