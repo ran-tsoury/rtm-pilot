@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,22 +9,78 @@
 </head>
 
 <body>
-  <div class="container">
-    <h1>RTM PILOT</h1>
-    <p>The system is online.</p>
-    <button onclick="document.getElementById('startScreen').style.display='block'">התחל</button>
-<div id="startScreen" style="display:none;">
-  <h2>RTM PILOT</h2>
-<p>בחר את סוג הפעולה:</p>
-  <button onclick="document.getElementById('newProcess').style.display='block'">התחל תהליך חדש</button>
-<button>המשך תהליך קיים</button>
-  <div id="newProcess" style="display:none;">
-<h2>תהליך חדש</h2>
-<p>הזן שם לתהליך:</p>
-<input type="text" placeholder="שם התהליך">
-<button onclick="alert('CONTINUE WORKS')">המשך</button>
-  </div>
-</div>
-</div>
+
+  <main class="container">
+
+    <section id="homeScreen">
+      <h1>RTM PILOT</h1>
+      <p>מערכת ההפעלה שלך לתהליך שינוי</p>
+
+      <button onclick="openStartScreen()">
+        התחל
+      </button>
+    </section>
+
+
+    <section id="startScreen" style="display:none;">
+
+      <h1>RTM PILOT</h1>
+      <p>בחר את סוג הפעולה</p>
+
+      <button onclick="showMessage('newProcess')">
+        תהליך חדש
+      </button>
+
+      <button onclick="showMessage('sos')">
+        SOS
+      </button>
+
+      <button onclick="showMessage('checkin')">
+        Check-in
+      </button>
+
+      <button onclick="goHome()">
+        חזרה
+      </button>
+
+      <p id="systemMessage"></p>
+
+    </section>
+
+  </main>
+
+
+  <script>
+
+    function openStartScreen() {
+      document.getElementById("homeScreen").style.display = "none";
+      document.getElementById("startScreen").style.display = "block";
+    }
+
+    function goHome() {
+      document.getElementById("startScreen").style.display = "none";
+      document.getElementById("homeScreen").style.display = "block";
+      document.getElementById("systemMessage").innerText = "";
+    }
+
+    function showMessage(type) {
+
+      const message = document.getElementById("systemMessage");
+
+      if (type === "newProcess") {
+        message.innerText = "תהליך חדש — המודול מוכן לחיבור.";
+      }
+
+      if (type === "sos") {
+        message.innerText = "SOS — המודול מוכן לחיבור.";
+      }
+
+      if (type === "checkin") {
+        message.innerText = "Check-in — המודול מוכן לחיבור.";
+      }
+    }
+
+  </script>
+
 </body>
 </html>
