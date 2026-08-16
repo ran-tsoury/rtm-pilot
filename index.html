@@ -11,12 +11,11 @@
   <div class="container">
     <h1>RTM PILOT</h1>
     <p>The system is online.</p>
-    <button onclick="alert('RTM PILOT התחיל')">התחל</button>
-  </div>
-  <script>
-document.getElementById("startBtn").addEventListener("click", function () {
-  alert("RTM PILOT התחיל");
-});
-  </script>
+    <button onclick="document.getElementById('startScreen').style.display='block'">התחל</button>
+<div id="startScreen" style="display:none;">
+  <h2>RTM PILOT</h2>
+  <p>המערכת מוכנה להתחיל.</p>
+</div>
+</div>
 </body>
 </html>
