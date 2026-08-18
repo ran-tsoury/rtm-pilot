@@ -11,7 +11,9 @@ export async function POST(request) {
     const body = await request.json();
 
     const userMessage =
-      typeof body?.message === "string" ? body.message.trim() : "";
+      typeof body?.message === "string"
+        ? body.message.trim()
+        : "";
 
     if (!userMessage) {
       return Response.json(
@@ -47,7 +49,7 @@ export async function POST(request) {
             {
               role: "developer",
               content:
-                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise. For now, keep responses concise. RTM canonical logic will be added in later stages.",
+                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise.",
             },
             {
               role: "user",
@@ -61,18 +63,17 @@ export async function POST(request) {
     const data = await openAIResponse.json();
 
     if (!openAIResponse.ok) {
-  return Response.json(
-    {
-      ok: false,
-      error:
-        data?.error?.message ||
-        data?.message ||
-        JSON.stringify(data),
-      details: data,
-    },
-    { status: openAIResponse.status }
-  );
-    }
+      return Response.json(
+        {
+          ok: false,
+          error:
+            data?.error?.message ||
+            data?.message ||
+            JSON.stringify(data),
+          details: data,
+        },
+        { status: openAIResponse.status }
+      );
     }
 
     const text =
@@ -84,13 +85,17 @@ export async function POST(request) {
     return Response.json({
       ok: true,
       system: "RTM",
+      reply: text,
       response: text,
     });
   } catch (error) {
     return Response.json(
       {
         ok: false,
-        error: "RTM server error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "RTM server error",
       },
       { status: 500 }
     );
