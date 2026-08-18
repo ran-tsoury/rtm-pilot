@@ -61,14 +61,18 @@ export async function POST(request) {
     const data = await openAIResponse.json();
 
     if (!openAIResponse.ok) {
-      return Response.json(
-        {
-          ok: false,
-          error: "OpenAI request failed",
-          details: data,
-        },
-        { status: openAIResponse.status }
-      );
+  return Response.json(
+    {
+      ok: false,
+      error:
+        data?.error?.message ||
+        data?.message ||
+        JSON.stringify(data),
+      details: data,
+    },
+    { status: openAIResponse.status }
+  );
+    }
     }
 
     const text =
