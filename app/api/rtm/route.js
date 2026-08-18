@@ -10,16 +10,15 @@ export async function POST(request) {
   try {
     const body = await request.json();
 
-    const userMessage =
-      typeof body?.message === "string"
-        ? body.message.trim()
-        : "";
+    const messages = Array.isArray(body?.messages)
+      ? body.messages
+      : [];
 
-    if (!userMessage) {
+    if (messages.length === 0) {
       return Response.json(
         {
           ok: false,
-          error: "Missing message",
+          error: "Missing messages",
         },
         { status: 400 }
       );
@@ -32,6 +31,28 @@ export async function POST(request) {
           error: "OPENAI_API_KEY is not configured",
         },
         { status: 500 }
+      );
+    }
+
+    const cleanMessages = messages
+      .filter(
+        (msg) =>
+          msg &&
+          typeof msg.content === "string" &&
+          msg.content.trim()
+      )
+      .map((msg) => ({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content.trim(),
+      }));
+
+    if (cleanMessages.length === 0) {
+      return Response.json(
+        {
+          ok: false,
+          error: "No valid messages",
+        },
+        { status: 400 }
       );
     }
 
@@ -49,12 +70,9 @@ export async function POST(request) {
             {
               role: "developer",
               content:
-                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise.",
+                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise. Maintain the context of the conversation and respond naturally to follow-up messages.",
             },
-            {
-              role: "user",
-              content: userMessage,
-            },
+            ...cleanMessages,
           ],
         }),
       }
