@@ -1,162 +1,110 @@
-"use client";
+export async function GET() {
+  return Response.json({
+    ok: true,
+    system: "RTM",
+    status: "API route is working",
+  });
+}
 
-import { useState } from "react";
+export async function POST(request) {
+  try {
+    const body = await request.json();
 
-export default function Home() {
-  const [screen, setScreen] = useState("home");
-  const [message, setMessage] = useState("");
-  const [reply, setReply] = useState("");
-  const [loading, setLoading] = useState(false);
+    const messages = Array.isArray(body?.messages)
+      ? body.messages
+          .filter(
+            (item) =>
+              item &&
+              (item.role === "user" || item.role === "assistant") &&
+              typeof item.content === "string" &&
+              item.content.trim()
+          )
+          .map((item) => ({
+            role: item.role,
+            content: item.content.trim(),
+          }))
+      : [];
 
-  async function sendToRTM() {
-    if (!message.trim()) return;
+    if (messages.length === 0) {
+      return Response.json(
+        {
+          ok: false,
+          error: "Missing messages",
+        },
+        { status: 400 }
+      );
+    }
 
-    setLoading(true);
-    setReply("");
+    if (!process.env.OPENAI_API_KEY) {
+      return Response.json(
+        {
+          ok: false,
+          error: "OPENAI_API_KEY is not configured",
+        },
+        { status: 500 }
+      );
+    }
 
-    try {
-      const response = await fetch("/api/rtm", {
+    const openAIResponse = await fetch(
+      "https://api.openai.com/v1/responses",
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          message: message,
+          model: "gpt-5.6",
+          input: [
+            {
+              role: "developer",
+              content:
+                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise. Maintain continuity across the conversation and use the prior messages as context.",
+            },
+            ...messages,
+          ],
         }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setReply(data.error || "אירעה שגיאה.");
-        return;
       }
+    );
 
-      setReply(
-        data.reply ||
-          data.message ||
-          "המערכת קיבלה את ההודעה."
+    const data = await openAIResponse.json();
+
+    if (!openAIResponse.ok) {
+      return Response.json(
+        {
+          ok: false,
+          error:
+            data?.error?.message ||
+            data?.message ||
+            JSON.stringify(data),
+          details: data,
+        },
+        { status: openAIResponse.status }
       );
-    } catch (error) {
-      setReply("לא ניתן כרגע להתחבר למערכת.");
-    } finally {
-      setLoading(false);
     }
-  }
 
-  if (screen !== "home") {
-    return (
-      <main
-        dir="rtl"
-        style={{
-          maxWidth: "800px",
-          margin: "40px auto",
-          padding: "24px",
-          fontFamily: "Arial, sans-serif",
-        }}
-      >
-        <h1>
-          {screen === "new" && "תהליך חדש"}
-          {screen === "sos" && "SOS"}
-          {screen === "checkin" && "Check-in"}
-        </h1>
+    const text =
+      data.output
+        ?.flatMap((item) => item.content || [])
+        ?.find((part) => part.type === "output_text")
+        ?.text || "";
 
-        <p>כתוב כאן מה קורה עכשיו.</p>
-
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="כתוב כאן..."
-          rows={7}
-          style={{
-            width: "100%",
-            fontSize: "18px",
-            padding: "12px",
-            boxSizing: "border-box",
-          }}
-        />
-
-        <div style={{ marginTop: "15px" }}>
-          <button
-            onClick={sendToRTM}
-            disabled={loading}
-            style={{
-              fontSize: "18px",
-              padding: "10px 20px",
-              marginLeft: "10px",
-            }}
-          >
-            {loading ? "חושב..." : "שלח"}
-          </button>
-
-          <button
-            onClick={() => {
-              setScreen("home");
-              setMessage("");
-              setReply("");
-            }}
-            style={{
-              fontSize: "18px",
-              padding: "10px 20px",
-            }}
-          >
-            חזרה
-          </button>
-        </div>
-
-        {reply && (
-          <div
-            style={{
-              marginTop: "30px",
-              padding: "20px",
-              border: "1px solid #ccc",
-              borderRadius: "8px",
-              whiteSpace: "pre-wrap",
-              fontSize: "18px",
-              lineHeight: "1.6",
-            }}
-          >
-            {reply}
-          </div>
-        )}
-      </main>
+    return Response.json({
+      ok: true,
+      system: "RTM",
+      reply: text,
+      response: text,
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "RTM server error",
+      },
+      { status: 500 }
     );
   }
-
-  return (
-    <main
-      dir="rtl"
-      style={{
-        maxWidth: "800px",
-        margin: "40px auto",
-        padding: "24px",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
-      <h1>RTM PILOT</h1>
-
-      <p style={{ fontSize: "20px" }}>בחר את סוג הפעולה</p>
-
-      <button
-        onClick={() => setScreen("new")}
-        style={{ margin: "5px", fontSize: "18px" }}
-      >
-        תהליך חדש
-      </button>
-
-      <button
-        onClick={() => setScreen("sos")}
-        style={{ margin: "5px", fontSize: "18px" }}
-      >
-        SOS
-      </button>
-
-      <button
-        onClick={() => setScreen("checkin")}
-        style={{ margin: "5px", fontSize: "18px" }}
-      >
-        Check-in
-      </button>
-    </main>
-  );
-        }
+}
