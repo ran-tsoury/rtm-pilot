@@ -1,110 +1,265 @@
-export async function GET() {
-  return Response.json({
-    ok: true,
-    system: "RTM",
-    status: "API route is working",
-  });
-}
+"use client";
 
-export async function POST(request) {
-  try {
-    const body = await request.json();
+import { useState } from "react";
 
-    const messages = Array.isArray(body?.messages)
-      ? body.messages
-          .filter(
-            (item) =>
-              item &&
-              (item.role === "user" || item.role === "assistant") &&
-              typeof item.content === "string" &&
-              item.content.trim()
-          )
-          .map((item) => ({
-            role: item.role,
-            content: item.content.trim(),
-          }))
-      : [];
+export default function Home() {
+  const [screen, setScreen] = useState("home");
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-    if (messages.length === 0) {
-      return Response.json(
-        {
-          ok: false,
-          error: "Missing messages",
-        },
-        { status: 400 }
-      );
-    }
+  async function sendToRTM() {
+    const trimmed = message.trim();
 
-    if (!process.env.OPENAI_API_KEY) {
-      return Response.json(
-        {
-          ok: false,
-          error: "OPENAI_API_KEY is not configured",
-        },
-        { status: 500 }
-      );
-    }
+    if (!trimmed || loading) return;
 
-    const openAIResponse = await fetch(
-      "https://api.openai.com/v1/responses",
-      {
+    const newUserMessage = {
+      role: "user",
+      content: trimmed,
+    };
+
+    const conversation = [...messages, newUserMessage];
+
+    setMessages(conversation);
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/rtm", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-5.6",
-          input: [
-            {
-              role: "developer",
-              content:
-                "You are the RTM Pilot engine. Respond in Hebrew unless the user asks otherwise. Maintain continuity across the conversation and use the prior messages as context.",
-            },
-            ...messages,
-          ],
+          messages: conversation,
         }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessages([
+          ...conversation,
+          {
+            role: "assistant",
+            content: data?.error || "אירעה שגיאה.",
+          },
+        ]);
+        return;
       }
-    );
 
-    const data = await openAIResponse.json();
+      const reply =
+        data?.reply ||
+        data?.response ||
+        "לא התקבלה תשובה.";
 
-    if (!openAIResponse.ok) {
-      return Response.json(
+      setMessages([
+        ...conversation,
         {
-          ok: false,
-          error:
-            data?.error?.message ||
-            data?.message ||
-            JSON.stringify(data),
-          details: data,
+          role: "assistant",
+          content: reply,
         },
-        { status: openAIResponse.status }
-      );
+      ]);
+    } catch (error) {
+      setMessages([
+        ...conversation,
+        {
+          role: "assistant",
+          content: "לא ניתן כרגע להתחבר למערכת.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    const text =
-      data.output
-        ?.flatMap((item) => item.content || [])
-        ?.find((part) => part.type === "output_text")
-        ?.text || "";
+  function resetConversation() {
+    setMessages([]);
+    setMessage("");
+    setScreen("home");
+  }
 
-    return Response.json({
-      ok: true,
-      system: "RTM",
-      reply: text,
-      response: text,
-    });
-  } catch (error) {
-    return Response.json(
-      {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "RTM server error",
-      },
-      { status: 500 }
+  if (screen === "home") {
+    return (
+      <main
+        dir="rtl"
+        style={{
+          maxWidth: "900px",
+          margin: "40px auto",
+          padding: "24px",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <h1>RTM PILOT</h1>
+
+        <p style={{ fontSize: "20px" }}>
+          בחר את סוג הפעולה
+        </p>
+
+        <button
+          onClick={() => setScreen("new")}
+          style={{
+            margin: "5px",
+            fontSize: "18px",
+            padding: "10px 18px",
+          }}
+        >
+          תהליך חדש
+        </button>
+
+        <button
+          onClick={() => setScreen("sos")}
+          style={{
+            margin: "5px",
+            fontSize: "18px",
+            padding: "10px 18px",
+          }}
+        >
+          SOS
+        </button>
+
+        <button
+          onClick={() => setScreen("checkin")}
+          style={{
+            margin: "5px",
+            fontSize: "18px",
+            padding: "10px 18px",
+          }}
+        >
+          Check-in
+        </button>
+      </main>
     );
   }
+
+  return (
+    <main
+      dir="rtl"
+      style={{
+        maxWidth: "900px",
+        margin: "0 auto",
+        padding: "20px",
+        fontFamily: "Arial, sans-serif",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div style={{ marginBottom: "20px" }}>
+        <button
+          onClick={resetConversation}
+          style={{
+            fontSize: "16px",
+            padding: "8px 14px",
+          }}
+        >
+          חזרה
+        </button>
+      </div>
+
+      <h1>
+        {screen === "new" && "תהליך חדש"}
+        {screen === "sos" && "SOS"}
+        {screen === "checkin" && "Check-in"}
+      </h1>
+
+      <div
+        style={{
+          flex: 1,
+          marginTop: "20px",
+          marginBottom: "20px",
+        }}
+      >
+        {messages.length === 0 && (
+          <div
+            style={{
+              padding: "20px",
+              border: "1px solid #ddd",
+              borderRadius: "12px",
+            }}
+          >
+            כתוב מה קורה עכשיו.
+          </div>
+        )}
+
+        {messages.map((item, index) => (
+          <div
+            key={index}
+            style={{
+              display: "flex",
+              justifyContent:
+                item.role === "user"
+                  ? "flex-start"
+                  : "flex-end",
+              marginBottom: "14px",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "75%",
+                padding: "14px 18px",
+                borderRadius: "16px",
+                border: "1px solid #ccc",
+                whiteSpace: "pre-wrap",
+                fontSize: "18px",
+                lineHeight: "1.6",
+              }}
+            >
+              {item.content}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div
+            style={{
+              padding: "14px 18px",
+              border: "1px solid #ccc",
+              borderRadius: "16px",
+              display: "inline-block",
+            }}
+          >
+            חושב...
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          position: "sticky",
+          bottom: 0,
+          background: "white",
+          paddingTop: "12px",
+          paddingBottom: "12px",
+          borderTop: "1px solid #ddd",
+        }}
+      >
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="כתוב כאן..."
+          rows={3}
+          style={{
+            width: "100%",
+            fontSize: "18px",
+            padding: "12px",
+            boxSizing: "border-box",
+            resize: "vertical",
+          }}
+        />
+
+        <button
+          onClick={sendToRTM}
+          disabled={loading}
+          style={{
+            marginTop: "10px",
+            fontSize: "18px",
+            padding: "10px 22px",
+          }}
+        >
+          {loading ? "חושב..." : "שלח"}
+        </button>
+      </div>
+    </main>
+  );
 }
