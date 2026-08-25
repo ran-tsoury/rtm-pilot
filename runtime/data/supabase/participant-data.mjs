@@ -1,126 +1,97 @@
-import { createSupabaseClient } from "./client.mjs";
+import {
+  createAuthenticatedSupabaseContext,
+} from "./client.mjs";
 
-function assertParticipantId(participantId) {
-  if (!participantId || typeof participantId !== "string") {
-    throw new Error("A valid participantId is required");
+import {
+  createRuntimeRepositories,
+} from "./repositories.mjs";
+
+export async function createParticipantDataAccess(
+  accessToken,
+  expectedParticipantId = null,
+  options = {}
+) {
+  const context =
+    await createAuthenticatedSupabaseContext(
+      accessToken,
+      options
+    );
+
+  if (
+    expectedParticipantId !== null &&
+    expectedParticipantId !== undefined &&
+    expectedParticipantId !== context.ownerId
+  ) {
+    throw new Error(
+      "Authenticated user does not match the requested participant"
+    );
   }
-}
 
-async function execute(query, context) {
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`${context}: ${error.message}`);
-  }
-
-  return data;
-}
-
-export function createParticipantDataAccess(accessToken, participantId) {
-  assertParticipantId(participantId);
-
-  const supabase = createSupabaseClient(accessToken);
+  const repositories =
+    createRuntimeRepositories(context);
 
   return Object.freeze({
-    participantId,
+    participantId: context.ownerId,
 
-    async getProfile() {
-      return execute(
-        supabase
-          .from("profiles")
-          .select("*")
-          .eq("user_id", participantId)
-          .maybeSingle(),
-        "Failed to load participant profile"
-      );
+    getProfile() {
+      return repositories.selectOwned("profiles", {
+        limit: 1,
+      });
     },
 
-    async getJourneyState() {
-      return execute(
-        supabase
-          .from("journey_state")
-          .select("*")
-          .eq("user_id", participantId)
-          .maybeSingle(),
-        "Failed to load participant journey state"
-      );
+    getJourneyState() {
+      return repositories.selectOwned("journey_state", {
+        limit: 1,
+      });
     },
 
-    async getDailyPresence() {
-      return execute(
-        supabase
-          .from("daily_presence")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant daily presence"
-      );
+    getDailyPresence() {
+      return repositories.selectOwned("daily_presence", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getEpisodes() {
-      return execute(
-        supabase
-          .from("episodes")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant episodes"
-      );
+    getEpisodes() {
+      return repositories.selectOwned("episodes", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getEvidence() {
-      return execute(
-        supabase
-          .from("evidence")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant evidence"
-      );
+    getEvidence() {
+      return repositories.selectOwned("evidence", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getInterventions() {
-      return execute(
-        supabase
-          .from("interventions")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant interventions"
-      );
+    getInterventions() {
+      return repositories.selectOwned("interventions", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getMemoryItems() {
-      return execute(
-        supabase
-          .from("memory_items")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant memory items"
-      );
+    getMemoryItems() {
+      return repositories.selectOwned("memory_items", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getWeightEntries() {
-      return execute(
-        supabase
-          .from("weight_entries")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant weight entries"
-      );
+    getWeightEntries() {
+      return repositories.selectOwned("weight_entries", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
 
-    async getAppEvents() {
-      return execute(
-        supabase
-          .from("app_events")
-          .select("*")
-          .eq("user_id", participantId)
-          .order("created_at", { ascending: false }),
-        "Failed to load participant app events"
-      );
+    getAppEvents() {
+      return repositories.selectOwned("app_events", {
+        orderBy: "created_at",
+        ascending: false,
+      });
     },
   });
 }

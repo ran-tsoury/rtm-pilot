@@ -1,4 +1,6 @@
-export { createSupabaseClient } from "./client.mjs";
+export {
+  createAuthenticatedSupabaseContext,
+} from "./client.mjs";
 
 export {
   OwnerScopeError,
@@ -10,5 +12,10 @@ export {
 } from "./owner-scope.mjs";
 
 export {
+  PARTICIPANT_OWNED_TABLES,
   createRuntimeRepositories,
 } from "./repositories.mjs";
+
+export {
+  createParticipantDataAccess,
+} from "./participant-data.mjs";
