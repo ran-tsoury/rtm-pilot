@@ -26,16 +26,11 @@ function requireAccessToken(accessToken) {
   return accessToken.trim();
 }
 
-export async function createAuthenticatedSupabaseContext(
-  accessToken,
-  options = {}
-) {
+export async function createAuthenticatedSupabaseContext(accessToken) {
   const token = requireAccessToken(accessToken);
   const { supabaseUrl, supabaseAnonKey } = requireEnvironment();
 
-  const createClientImpl = options.createClientImpl ?? createClient;
-
-  const supabase = createClientImpl(
+  const supabase = createClient(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -51,14 +46,6 @@ export async function createAuthenticatedSupabaseContext(
       },
     }
   );
-
-  if (
-    !supabase ||
-    !supabase.auth ||
-    typeof supabase.auth.getUser !== "function"
-  ) {
-    throw new Error("Invalid Supabase authentication client");
-  }
 
   const {
     data,

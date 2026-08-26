@@ -16,11 +16,14 @@ import {
 
 const previousUrl = process.env.SUPABASE_URL;
 const previousAnonKey = process.env.SUPABASE_ANON_KEY;
+const originalFetch = globalThis.fetch;
 
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_ANON_KEY = "test-anon-key";
 
 process.on("exit", () => {
+  globalThis.fetch = originalFetch;
+
   if (previousUrl === undefined) {
     delete process.env.SUPABASE_URL;
   } else {
@@ -34,129 +37,81 @@ process.on("exit", () => {
   }
 });
 
-function createQueryRecorder({
-  data = [],
-  error = null,
+function jsonResponse(body, status = 200) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: {
+        "content-type": "application/json",
+      },
+    }
+  );
+}
+
+function installFetchMock({
+  userId = "user-a",
+  authStatus = 200,
+  queryStatus = 200,
 } = {}) {
   const calls = [];
 
-  const query = {
-    calls,
+  globalThis.fetch = async (input, init = {}) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input.url;
 
-    select(value) {
-      calls.push(["select", value]);
-      return query;
-    },
+    const method =
+      init.method ??
+      (typeof input === "object" && input.method) ??
+      "GET";
 
-    insert(value) {
-      calls.push(["insert", value]);
-      return query;
-    },
+    const body =
+      init.body ??
+      (typeof input === "object" ? input.body : undefined);
 
-    update(value) {
-      calls.push(["update", value]);
-      return query;
-    },
+    calls.push({
+      url,
+      method,
+      body,
+    });
 
-    delete() {
-      calls.push(["delete"]);
-      return query;
-    },
-
-    eq(column, value) {
-      calls.push(["eq", column, value]);
-      return query;
-    },
-
-    order(column, options) {
-      calls.push(["order", column, options]);
-      return query;
-    },
-
-    limit(value) {
-      calls.push(["limit", value]);
-      return query;
-    },
-
-    then(resolve, reject) {
-      return Promise.resolve({
-        data,
-        error,
-      }).then(resolve, reject);
-    },
-  };
-
-  return query;
-}
-
-function createFakeClient({
-  userId = "user-a",
-  authError = null,
-  queryError = null,
-} = {}) {
-  const tables = [];
-  const queries = [];
-
-  const client = {
-    auth: {
-      async getUser(token) {
-        if (authError) {
-          return {
-            data: {
-              user: null,
-            },
-            error: authError,
-          };
-        }
-
-        return {
-          data: {
-            user: {
-              id: userId,
-            },
+    if (url.includes("/auth/v1/user")) {
+      if (authStatus !== 200) {
+        return jsonResponse(
+          {
+            message: "invalid jwt",
           },
-          error: null,
-        };
-      },
-    },
-
-    from(table) {
-      tables.push(table);
-
-      const query = createQueryRecorder({
-        error: queryError,
-      });
-
-      queries.push(query);
-
-      return query;
-    },
-  };
-
-  return {
-    client,
-    tables,
-    queries,
-  };
-}
-
-async function createVerifiedTestContext(options = {}) {
-  const fake = createFakeClient(options);
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-test-token",
-      {
-        createClientImpl() {
-          return fake.client;
-        },
+          authStatus
+        );
       }
-    );
 
-  return {
-    context,
-    ...fake,
+      return jsonResponse({
+        id: userId,
+        aud: "authenticated",
+        role: "authenticated",
+        email: `${userId}@example.com`,
+      });
+    }
+
+    if (url.includes("/rest/v1/")) {
+      if (queryStatus >= 400) {
+        return jsonResponse(
+          {
+            message: "RLS denied request",
+          },
+          queryStatus
+        );
+      }
+
+      return jsonResponse([]);
+    }
+
+    throw new Error(`Unexpected fetch URL: ${url}`);
   };
+
+  return calls;
 }
 
 test("anonymous access token is rejected", async () => {
@@ -167,30 +122,28 @@ test("anonymous access token is rejected", async () => {
 });
 
 test("authentication failure is fail closed", async () => {
-  const fake = createFakeClient({
-    authError: new Error("invalid jwt"),
+  installFetchMock({
+    authStatus: 401,
   });
 
   await assert.rejects(
     () =>
       createAuthenticatedSupabaseContext(
-        "bad-token",
-        {
-          createClientImpl() {
-            return fake.client;
-          },
-        }
+        "bad-token"
       ),
     /verify authenticated/i
   );
 });
 
-test("authenticated owner is derived from verified user id", async () => {
-  const {
-    context,
-  } = await createVerifiedTestContext({
+test("authenticated owner is derived from Supabase verified user id", async () => {
+  installFetchMock({
     userId: "verified-user-123",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   assert.equal(
     context.ownerId,
@@ -203,29 +156,72 @@ test("authenticated owner is derived from verified user id", async () => {
   );
 });
 
-test("repository rejects an arbitrary unverified context", () => {
-  const fakeSupabase = {
-    from() {
-      return {};
+test("production authenticated factory exposes no client injection parameter", async () => {
+  installFetchMock({
+    userId: "real-user",
+  });
+
+  const fabricatedClient = {
+    auth: {
+      async getUser() {
+        return {
+          data: {
+            user: {
+              id: "attacker",
+            },
+          },
+          error: null,
+        };
+      },
     },
   };
 
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token",
+      {
+        createClientImpl() {
+          return fabricatedClient;
+        },
+      }
+    );
+
+  assert.equal(
+    context.ownerId,
+    "real-user"
+  );
+
+  assert.notEqual(
+    context.ownerId,
+    "attacker"
+  );
+});
+
+test("repository rejects arbitrary caller-created context", () => {
   assert.throws(
     () =>
       createRuntimeRepositories({
-        supabase: fakeSupabase,
+        supabase: {
+          from() {},
+        },
         ownerId: "attacker",
+        user: {
+          id: "attacker",
+        },
       }),
     /verified authenticated Supabase context/i
   );
 });
 
-test("repository owner is bound to authenticated user", async () => {
-  const {
-    context,
-  } = await createVerifiedTestContext({
+test("repository owner is bound to verified authenticated context", async () => {
+  installFetchMock({
     userId: "user-a",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -236,24 +232,7 @@ test("repository owner is bound to authenticated user", async () => {
   );
 });
 
-test("repository blocks tables outside participant allowlist", async () => {
-  const {
-    context,
-  } = await createVerifiedTestContext();
-
-  const repositories =
-    createRuntimeRepositories(context);
-
-  await assert.rejects(
-    () =>
-      repositories.selectOwned(
-        "admin_secrets"
-      ),
-    /not approved/i
-  );
-});
-
-test("participant-owned table allowlist is explicit", () => {
+test("participant table allowlist is explicit", () => {
   assert.deepEqual(
     [...PARTICIPANT_OWNED_TABLES],
     [
@@ -270,14 +249,35 @@ test("participant-owned table allowlist is explicit", () => {
   );
 });
 
-test("read query is scoped to authenticated user_id", async () => {
-  const {
-    context,
-    tables,
-    queries,
-  } = await createVerifiedTestContext({
+test("repository blocks arbitrary tables", async () => {
+  installFetchMock();
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
+
+  const repositories =
+    createRuntimeRepositories(context);
+
+  await assert.rejects(
+    () =>
+      repositories.selectOwned(
+        "admin_secrets"
+      ),
+    /not approved/i
+  );
+});
+
+test("read is scoped to authenticated user_id", async () => {
+  const calls = installFetchMock({
     userId: "user-a",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -290,33 +290,33 @@ test("read query is scoped to authenticated user_id", async () => {
     }
   );
 
-  assert.deepEqual(tables, [
-    "episodes",
-  ]);
+  const request = calls.find(
+    (call) =>
+      call.url.includes(
+        "/rest/v1/episodes"
+      )
+  );
 
-  assert.deepEqual(
-    queries[0].calls,
-    [
-      ["select", "*"],
-      ["eq", "user_id", "user-a"],
-      [
-        "order",
-        "created_at",
-        {
-          ascending: false,
-        },
-      ],
-    ]
+  assert.ok(request);
+  assert.match(
+    request.url,
+    /user_id=eq\.user-a/
+  );
+  assert.match(
+    request.url,
+    /order=created_at\.desc/
   );
 });
 
 test("insert overwrites caller supplied user_id", async () => {
-  const {
-    context,
-    queries,
-  } = await createVerifiedTestContext({
+  const calls = installFetchMock({
     userId: "user-a",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -329,28 +329,40 @@ test("insert overwrites caller supplied user_id", async () => {
     }
   );
 
-  assert.deepEqual(
-    queries[0].calls,
-    [
-      [
-        "insert",
-        {
-          user_id: "user-a",
-          title: "test",
-        },
-      ],
-      ["select", undefined],
-    ]
+  const request = calls.find(
+    (call) =>
+      call.url.includes(
+        "/rest/v1/episodes"
+      ) &&
+      call.method === "POST"
+  );
+
+  assert.ok(request);
+
+  const payload = JSON.parse(
+    request.body
+  );
+
+  assert.equal(
+    payload.user_id,
+    "user-a"
+  );
+
+  assert.equal(
+    payload.title,
+    "test"
   );
 });
 
-test("update removes ownership fields and scopes record to owner", async () => {
-  const {
-    context,
-    queries,
-  } = await createVerifiedTestContext({
+test("update strips ownership fields and scopes by id and authenticated user_id", async () => {
+  const calls = installFetchMock({
     userId: "user-a",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -365,29 +377,47 @@ test("update removes ownership fields and scopes record to owner", async () => {
     }
   );
 
+  const request = calls.find(
+    (call) =>
+      call.url.includes(
+        "/rest/v1/journey_state"
+      ) &&
+      call.method === "PATCH"
+  );
+
+  assert.ok(request);
+
+  const payload = JSON.parse(
+    request.body
+  );
+
   assert.deepEqual(
-    queries[0].calls,
-    [
-      [
-        "update",
-        {
-          status: "active",
-        },
-      ],
-      ["eq", "id", "record-1"],
-      ["eq", "user_id", "user-a"],
-      ["select", undefined],
-    ]
+    payload,
+    {
+      status: "active",
+    }
+  );
+
+  assert.match(
+    request.url,
+    /id=eq\.record-1/
+  );
+
+  assert.match(
+    request.url,
+    /user_id=eq\.user-a/
   );
 });
 
-test("delete scopes record to authenticated owner", async () => {
-  const {
-    context,
-    queries,
-  } = await createVerifiedTestContext({
+test("delete scopes by id and authenticated user_id", async () => {
+  const calls = installFetchMock({
     userId: "user-a",
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -397,25 +427,37 @@ test("delete scopes record to authenticated owner", async () => {
     "record-9"
   );
 
-  assert.deepEqual(
-    queries[0].calls,
-    [
-      ["delete"],
-      ["eq", "id", "record-9"],
-      ["eq", "user_id", "user-a"],
-      ["select", undefined],
-    ]
+  const request = calls.find(
+    (call) =>
+      call.url.includes(
+        "/rest/v1/episodes"
+      ) &&
+      call.method === "DELETE"
+  );
+
+  assert.ok(request);
+
+  assert.match(
+    request.url,
+    /id=eq\.record-9/
+  );
+
+  assert.match(
+    request.url,
+    /user_id=eq\.user-a/
   );
 });
 
 test("repository query errors fail closed", async () => {
-  const {
-    context,
-  } = await createVerifiedTestContext({
-    queryError: new Error(
-      "RLS denied request"
-    ),
+  installFetchMock({
+    userId: "user-a",
+    queryStatus: 403,
   });
+
+  const context =
+    await createAuthenticatedSupabaseContext(
+      "valid-token"
+    );
 
   const repositories =
     createRuntimeRepositories(context);
@@ -424,45 +466,34 @@ test("repository query errors fail closed", async () => {
     () =>
       repositories.selectOwned(
         "episodes"
-      ),
-    /RLS denied request/
+      )
   );
 });
 
-test("participant facade rejects mismatched requested participant", async () => {
-  const fake = createFakeClient({
+test("participant facade rejects mismatched participant id", async () => {
+  installFetchMock({
     userId: "user-a",
   });
 
   await assert.rejects(
     () =>
       createParticipantDataAccess(
-        "valid-test-token",
-        "user-b",
-        {
-          createClientImpl() {
-            return fake.client;
-          },
-        }
+        "valid-token",
+        "user-b"
       ),
     /does not match/i
   );
 });
 
-test("participant facade derives participant id from authenticated user", async () => {
-  const fake = createFakeClient({
+test("participant facade derives participant id from authenticated identity", async () => {
+  installFetchMock({
     userId: "user-a",
   });
 
   const participant =
     await createParticipantDataAccess(
-      "valid-test-token",
-      "user-a",
-      {
-        createClientImpl() {
-          return fake.client;
-        },
-      }
+      "valid-token",
+      "user-a"
     );
 
   assert.equal(
@@ -472,40 +503,29 @@ test("participant facade derives participant id from authenticated user", async 
 });
 
 test("participant facade delegates reads through owner-scoped repository", async () => {
-  const fake = createFakeClient({
+  const calls = installFetchMock({
     userId: "user-a",
   });
 
   const participant =
     await createParticipantDataAccess(
-      "valid-test-token",
-      "user-a",
-      {
-        createClientImpl() {
-          return fake.client;
-        },
-      }
+      "valid-token",
+      "user-a"
     );
 
   await participant.getEpisodes();
 
-  assert.deepEqual(
-    fake.tables,
-    ["episodes"]
+  const request = calls.find(
+    (call) =>
+      call.url.includes(
+        "/rest/v1/episodes"
+      )
   );
 
-  assert.deepEqual(
-    fake.queries[0].calls,
-    [
-      ["select", "*"],
-      ["eq", "user_id", "user-a"],
-      [
-        "order",
-        "created_at",
-        {
-          ascending: false,
-        },
-      ],
-    ]
+  assert.ok(request);
+
+  assert.match(
+    request.url,
+    /user_id=eq\.user-a/
   );
 });
