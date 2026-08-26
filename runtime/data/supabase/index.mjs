@@ -3,7 +3,6 @@ export {
 } from "./client.mjs";
 
 export {
-  PARTICIPANT_OWNED_TABLES,
   createRuntimeRepositories,
 } from "./repositories.mjs";
 

@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import * as publicRuntimeDataApi
+  from "../runtime/data/supabase/index.mjs";
+
 import {
   createAuthenticatedSupabaseContext,
 } from "../runtime/data/supabase/client.mjs";
@@ -18,8 +21,11 @@ const previousUrl = process.env.SUPABASE_URL;
 const previousAnonKey = process.env.SUPABASE_ANON_KEY;
 const originalFetch = globalThis.fetch;
 
-process.env.SUPABASE_URL = "https://example.supabase.co";
-process.env.SUPABASE_ANON_KEY = "test-anon-key";
+process.env.SUPABASE_URL =
+  "https://example.supabase.co";
+
+process.env.SUPABASE_ANON_KEY =
+  "test-anon-key";
 
 process.on("exit", () => {
   globalThis.fetch = originalFetch;
@@ -33,7 +39,8 @@ process.on("exit", () => {
   if (previousAnonKey === undefined) {
     delete process.env.SUPABASE_ANON_KEY;
   } else {
-    process.env.SUPABASE_ANON_KEY = previousAnonKey;
+    process.env.SUPABASE_ANON_KEY =
+      previousAnonKey;
   }
 });
 
@@ -56,7 +63,10 @@ function installFetchMock({
 } = {}) {
   const calls = [];
 
-  globalThis.fetch = async (input, init = {}) => {
+  globalThis.fetch = async (
+    input,
+    init = {}
+  ) => {
     const url =
       typeof input === "string"
         ? input
@@ -64,12 +74,20 @@ function installFetchMock({
 
     const method =
       init.method ??
-      (typeof input === "object" && input.method) ??
+      (
+        typeof input === "object"
+          ? input.method
+          : undefined
+      ) ??
       "GET";
 
     const body =
       init.body ??
-      (typeof input === "object" ? input.body : undefined);
+      (
+        typeof input === "object"
+          ? input.body
+          : undefined
+      );
 
     calls.push({
       url,
@@ -99,7 +117,8 @@ function installFetchMock({
       if (queryStatus >= 400) {
         return jsonResponse(
           {
-            message: "RLS denied request",
+            message:
+              "RLS denied request",
           },
           queryStatus
         );
@@ -108,424 +127,533 @@ function installFetchMock({
       return jsonResponse([]);
     }
 
-    throw new Error(`Unexpected fetch URL: ${url}`);
+    throw new Error(
+      `Unexpected fetch URL: ${url}`
+    );
   };
 
   return calls;
 }
 
-test("anonymous access token is rejected", async () => {
-  await assert.rejects(
-    () => createAuthenticatedSupabaseContext(""),
-    /access token/i
-  );
-});
+test(
+  "public runtime data API exposes only authenticated authority",
+  () => {
+    assert.deepEqual(
+      Object.keys(
+        publicRuntimeDataApi
+      ).sort(),
+      [
+        "createAuthenticatedSupabaseContext",
+        "createParticipantDataAccess",
+        "createRuntimeRepositories",
+      ].sort()
+    );
+  }
+);
 
-test("authentication failure is fail closed", async () => {
-  installFetchMock({
-    authStatus: 401,
-  });
+test(
+  "obsolete arbitrary owner-scope module is not production importable",
+  async () => {
+    await assert.rejects(
+      () =>
+        import(
+          "../runtime/data/supabase/owner-scope.mjs"
+        ),
+      (error) =>
+        error &&
+        error.code ===
+          "ERR_MODULE_NOT_FOUND"
+    );
+  }
+);
 
-  await assert.rejects(
-    () =>
-      createAuthenticatedSupabaseContext(
-        "bad-token"
-      ),
-    /verify authenticated/i
-  );
-});
+test(
+  "anonymous access token is rejected",
+  async () => {
+    await assert.rejects(
+      () =>
+        createAuthenticatedSupabaseContext(
+          ""
+        ),
+      /access token/i
+    );
+  }
+);
 
-test("authenticated owner is derived from Supabase verified user id", async () => {
-  installFetchMock({
-    userId: "verified-user-123",
-  });
+test(
+  "authentication failure is fail closed",
+  async () => {
+    installFetchMock({
+      authStatus: 401,
+    });
 
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    await assert.rejects(
+      () =>
+        createAuthenticatedSupabaseContext(
+          "bad-token"
+        ),
+      /verify authenticated/i
+    );
+  }
+);
+
+test(
+  "authenticated owner is derived from Supabase verified user id",
+  async () => {
+    installFetchMock({
+      userId: "verified-user-123",
+    });
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    assert.equal(
+      context.ownerId,
+      "verified-user-123"
     );
 
-  assert.equal(
-    context.ownerId,
-    "verified-user-123"
-  );
+    assert.equal(
+      context.user.id,
+      "verified-user-123"
+    );
+  }
+);
 
-  assert.equal(
-    context.user.id,
-    "verified-user-123"
-  );
-});
+test(
+  "production authenticated factory exposes no client injection parameter",
+  async () => {
+    installFetchMock({
+      userId: "real-user",
+    });
 
-test("production authenticated factory exposes no client injection parameter", async () => {
-  installFetchMock({
-    userId: "real-user",
-  });
-
-  const fabricatedClient = {
-    auth: {
-      async getUser() {
-        return {
-          data: {
-            user: {
-              id: "attacker",
+    const fabricatedClient = {
+      auth: {
+        async getUser() {
+          return {
+            data: {
+              user: {
+                id: "attacker",
+              },
             },
-          },
-          error: null,
-        };
-      },
-    },
-  };
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token",
-      {
-        createClientImpl() {
-          return fabricatedClient;
+            error: null,
+          };
         },
+      },
+    };
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token",
+        {
+          createClientImpl() {
+            return fabricatedClient;
+          },
+        }
+      );
+
+    assert.equal(
+      context.ownerId,
+      "real-user"
+    );
+
+    assert.notEqual(
+      context.ownerId,
+      "attacker"
+    );
+  }
+);
+
+test(
+  "repository rejects arbitrary caller-created context",
+  () => {
+    assert.throws(
+      () =>
+        createRuntimeRepositories({
+          supabase: {
+            from() {},
+          },
+          ownerId: "attacker",
+          user: {
+            id: "attacker",
+          },
+        }),
+      /verified authenticated Supabase context/i
+    );
+  }
+);
+
+test(
+  "repository owner is bound to verified authenticated context",
+  async () => {
+    installFetchMock({
+      userId: "user-a",
+    });
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
+
+    assert.equal(
+      repositories.ownerId,
+      "user-a"
+    );
+  }
+);
+
+test(
+  "participant table allowlist is explicit",
+  () => {
+    assert.deepEqual(
+      [...PARTICIPANT_OWNED_TABLES],
+      [
+        "profiles",
+        "journey_state",
+        "daily_presence",
+        "episodes",
+        "evidence",
+        "interventions",
+        "memory_items",
+        "weight_entries",
+        "app_events",
+      ]
+    );
+  }
+);
+
+test(
+  "repository blocks arbitrary tables",
+  async () => {
+    installFetchMock();
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
+
+    await assert.rejects(
+      () =>
+        repositories.selectOwned(
+          "admin_secrets"
+        ),
+      /not approved/i
+    );
+  }
+);
+
+test(
+  "read is scoped to authenticated user_id",
+  async () => {
+    const calls =
+      installFetchMock({
+        userId: "user-a",
+      });
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
+
+    await repositories.selectOwned(
+      "episodes",
+      {
+        orderBy: "created_at",
+        ascending: false,
       }
     );
 
-  assert.equal(
-    context.ownerId,
-    "real-user"
-  );
+    const request =
+      calls.find(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/episodes"
+          )
+      );
 
-  assert.notEqual(
-    context.ownerId,
-    "attacker"
-  );
-});
+    assert.ok(request);
 
-test("repository rejects arbitrary caller-created context", () => {
-  assert.throws(
-    () =>
-      createRuntimeRepositories({
-        supabase: {
-          from() {},
-        },
-        ownerId: "attacker",
-        user: {
-          id: "attacker",
-        },
-      }),
-    /verified authenticated Supabase context/i
-  );
-});
-
-test("repository owner is bound to verified authenticated context", async () => {
-  installFetchMock({
-    userId: "user-a",
-  });
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    assert.match(
+      request.url,
+      /user_id=eq\.user-a/
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    assert.match(
+      request.url,
+      /order=created_at\.desc/
+    );
+  }
+);
 
-  assert.equal(
-    repositories.ownerId,
-    "user-a"
-  );
-});
+test(
+  "insert overwrites caller supplied user_id",
+  async () => {
+    const calls =
+      installFetchMock({
+        userId: "user-a",
+      });
 
-test("participant table allowlist is explicit", () => {
-  assert.deepEqual(
-    [...PARTICIPANT_OWNED_TABLES],
-    [
-      "profiles",
-      "journey_state",
-      "daily_presence",
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
+
+    await repositories.insertOwned(
       "episodes",
-      "evidence",
-      "interventions",
-      "memory_items",
-      "weight_entries",
-      "app_events",
-    ]
-  );
-});
-
-test("repository blocks arbitrary tables", async () => {
-  installFetchMock();
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+      {
+        user_id: "user-b",
+        title: "test",
+      }
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    const request =
+      calls.find(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/episodes"
+          ) &&
+          call.method === "POST"
+      );
 
-  await assert.rejects(
-    () =>
-      repositories.selectOwned(
-        "admin_secrets"
-      ),
-    /not approved/i
-  );
-});
+    assert.ok(request);
 
-test("read is scoped to authenticated user_id", async () => {
-  const calls = installFetchMock({
-    userId: "user-a",
-  });
+    const payload =
+      JSON.parse(request.body);
 
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    assert.equal(
+      payload.user_id,
+      "user-a"
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    assert.equal(
+      payload.title,
+      "test"
+    );
+  }
+);
 
-  await repositories.selectOwned(
-    "episodes",
-    {
-      orderBy: "created_at",
-      ascending: false,
-    }
-  );
+test(
+  "update strips ownership fields and scopes by id and authenticated user_id",
+  async () => {
+    const calls =
+      installFetchMock({
+        userId: "user-a",
+      });
 
-  const request = calls.find(
-    (call) =>
-      call.url.includes(
-        "/rest/v1/episodes"
-      )
-  );
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
 
-  assert.ok(request);
-  assert.match(
-    request.url,
-    /user_id=eq\.user-a/
-  );
-  assert.match(
-    request.url,
-    /order=created_at\.desc/
-  );
-});
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
 
-test("insert overwrites caller supplied user_id", async () => {
-  const calls = installFetchMock({
-    userId: "user-a",
-  });
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    await repositories.updateOwned(
+      "journey_state",
+      "record-1",
+      {
+        user_id: "user-b",
+        owner_id: "user-b",
+        status: "active",
+      }
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    const request =
+      calls.find(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/journey_state"
+          ) &&
+          call.method === "PATCH"
+      );
 
-  await repositories.insertOwned(
-    "episodes",
-    {
-      user_id: "user-b",
-      title: "test",
-    }
-  );
+    assert.ok(request);
 
-  const request = calls.find(
-    (call) =>
-      call.url.includes(
-        "/rest/v1/episodes"
-      ) &&
-      call.method === "POST"
-  );
+    const payload =
+      JSON.parse(request.body);
 
-  assert.ok(request);
-
-  const payload = JSON.parse(
-    request.body
-  );
-
-  assert.equal(
-    payload.user_id,
-    "user-a"
-  );
-
-  assert.equal(
-    payload.title,
-    "test"
-  );
-});
-
-test("update strips ownership fields and scopes by id and authenticated user_id", async () => {
-  const calls = installFetchMock({
-    userId: "user-a",
-  });
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    assert.deepEqual(
+      payload,
+      {
+        status: "active",
+      }
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
-
-  await repositories.updateOwned(
-    "journey_state",
-    "record-1",
-    {
-      user_id: "user-b",
-      owner_id: "user-b",
-      status: "active",
-    }
-  );
-
-  const request = calls.find(
-    (call) =>
-      call.url.includes(
-        "/rest/v1/journey_state"
-      ) &&
-      call.method === "PATCH"
-  );
-
-  assert.ok(request);
-
-  const payload = JSON.parse(
-    request.body
-  );
-
-  assert.deepEqual(
-    payload,
-    {
-      status: "active",
-    }
-  );
-
-  assert.match(
-    request.url,
-    /id=eq\.record-1/
-  );
-
-  assert.match(
-    request.url,
-    /user_id=eq\.user-a/
-  );
-});
-
-test("delete scopes by id and authenticated user_id", async () => {
-  const calls = installFetchMock({
-    userId: "user-a",
-  });
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    assert.match(
+      request.url,
+      /id=eq\.record-1/
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    assert.match(
+      request.url,
+      /user_id=eq\.user-a/
+    );
+  }
+);
 
-  await repositories.deleteOwned(
-    "episodes",
-    "record-9"
-  );
+test(
+  "delete scopes by id and authenticated user_id",
+  async () => {
+    const calls =
+      installFetchMock({
+        userId: "user-a",
+      });
 
-  const request = calls.find(
-    (call) =>
-      call.url.includes(
-        "/rest/v1/episodes"
-      ) &&
-      call.method === "DELETE"
-  );
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
 
-  assert.ok(request);
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
 
-  assert.match(
-    request.url,
-    /id=eq\.record-9/
-  );
-
-  assert.match(
-    request.url,
-    /user_id=eq\.user-a/
-  );
-});
-
-test("repository query errors fail closed", async () => {
-  installFetchMock({
-    userId: "user-a",
-    queryStatus: 403,
-  });
-
-  const context =
-    await createAuthenticatedSupabaseContext(
-      "valid-token"
+    await repositories.deleteOwned(
+      "episodes",
+      "record-9"
     );
 
-  const repositories =
-    createRuntimeRepositories(context);
+    const request =
+      calls.find(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/episodes"
+          ) &&
+          call.method === "DELETE"
+      );
 
-  await assert.rejects(
-    () =>
-      repositories.selectOwned(
-        "episodes"
-      )
-  );
-});
+    assert.ok(request);
 
-test("participant facade rejects mismatched participant id", async () => {
-  installFetchMock({
-    userId: "user-a",
-  });
+    assert.match(
+      request.url,
+      /id=eq\.record-9/
+    );
 
-  await assert.rejects(
-    () =>
-      createParticipantDataAccess(
+    assert.match(
+      request.url,
+      /user_id=eq\.user-a/
+    );
+  }
+);
+
+test(
+  "repository query errors fail closed",
+  async () => {
+    installFetchMock({
+      userId: "user-a",
+      queryStatus: 403,
+    });
+
+    const context =
+      await createAuthenticatedSupabaseContext(
+        "valid-token"
+      );
+
+    const repositories =
+      createRuntimeRepositories(
+        context
+      );
+
+    await assert.rejects(
+      () =>
+        repositories.selectOwned(
+          "episodes"
+        )
+    );
+  }
+);
+
+test(
+  "participant facade rejects mismatched participant id",
+  async () => {
+    installFetchMock({
+      userId: "user-a",
+    });
+
+    await assert.rejects(
+      () =>
+        createParticipantDataAccess(
+          "valid-token",
+          "user-b"
+        ),
+      /does not match/i
+    );
+  }
+);
+
+test(
+  "participant facade derives participant id from authenticated identity",
+  async () => {
+    installFetchMock({
+      userId: "user-a",
+    });
+
+    const participant =
+      await createParticipantDataAccess(
         "valid-token",
-        "user-b"
-      ),
-    /does not match/i
-  );
-});
+        "user-a"
+      );
 
-test("participant facade derives participant id from authenticated identity", async () => {
-  installFetchMock({
-    userId: "user-a",
-  });
-
-  const participant =
-    await createParticipantDataAccess(
-      "valid-token",
+    assert.equal(
+      participant.participantId,
       "user-a"
     );
+  }
+);
 
-  assert.equal(
-    participant.participantId,
-    "user-a"
-  );
-});
+test(
+  "participant facade delegates reads through owner-scoped repository",
+  async () => {
+    const calls =
+      installFetchMock({
+        userId: "user-a",
+      });
 
-test("participant facade delegates reads through owner-scoped repository", async () => {
-  const calls = installFetchMock({
-    userId: "user-a",
-  });
+    const participant =
+      await createParticipantDataAccess(
+        "valid-token",
+        "user-a"
+      );
 
-  const participant =
-    await createParticipantDataAccess(
-      "valid-token",
-      "user-a"
+    await participant.getEpisodes();
+
+    const request =
+      calls.find(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/episodes"
+          )
+      );
+
+    assert.ok(request);
+
+    assert.match(
+      request.url,
+      /user_id=eq\.user-a/
     );
-
-  await participant.getEpisodes();
-
-  const request = calls.find(
-    (call) =>
-      call.url.includes(
-        "/rest/v1/episodes"
-      )
-  );
-
-  assert.ok(request);
-
-  assert.match(
-    request.url,
-    /user_id=eq\.user-a/
-  );
-});
+  }
+);
