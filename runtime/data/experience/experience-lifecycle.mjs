@@ -49,11 +49,7 @@ function normalizeOptionalString(value) {
   return normalized === "" ? null : normalized;
 }
 
-function normalizeConfidence(value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
+function requireConfidence(value) {
   if (
     typeof value !== "number" ||
     Number.isNaN(value) ||
@@ -61,7 +57,7 @@ function normalizeConfidence(value) {
     value > 1
   ) {
     throw new Error(
-      "confidence must be between 0 and 1"
+      "confidence must be a number between 0 and 1"
     );
   }
 
@@ -240,6 +236,9 @@ export function recordExperienceConfidence(
     );
   }
 
+  const validatedConfidence =
+    requireConfidence(confidence);
+
   return Object.freeze({
     ...previous,
 
@@ -247,7 +246,7 @@ export function recordExperienceConfidence(
       EXPERIENCE_STATUS.CONFIDENCE,
 
     confidence:
-      normalizeConfidence(confidence),
+      validatedConfidence,
 
     confidenceAt:
       confidenceAt ?? null,

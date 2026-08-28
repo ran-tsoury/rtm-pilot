@@ -10,6 +10,8 @@ const VALID_STATUSES = new Set(
   Object.values(MEMORY_STATUS)
 );
 
+const MEMORY_CONTENT_SCHEMA_VERSION = 1;
+
 function requireNonEmptyString(value, field) {
   if (
     typeof value !== "string" ||
@@ -66,7 +68,10 @@ export function createMemoryRecord({
   supersedesId = null,
 } = {}) {
   const normalizedSource =
-    requireNonEmptyString(source, "source");
+    requireNonEmptyString(
+      source,
+      "source"
+    );
 
   if (!VALID_STATUSES.has(status)) {
     throw new Error(
@@ -85,20 +90,121 @@ export function createMemoryRecord({
   }
 
   return Object.freeze({
-    source: normalizedSource,
-    context: normalizeOptionalString(context),
+    source:
+      normalizedSource,
+
+    context:
+      normalizeOptionalString(context),
+
     status,
-    confidence: normalizeConfidence(confidence),
+
+    confidence:
+      normalizeConfidence(confidence),
+
     value:
       value === undefined
         ? null
         : value,
+
     observedAt:
       observedAt === undefined
         ? null
         : observedAt,
+
     supersedesId:
-      normalizeOptionalString(supersedesId),
+      normalizeOptionalString(
+        supersedesId
+      ),
+  });
+}
+
+export function serializeMemoryRecord(
+  memoryRecord
+) {
+  if (
+    !memoryRecord ||
+    typeof memoryRecord !== "object"
+  ) {
+    throw new Error(
+      "memory record is required"
+    );
+  }
+
+  const canonical =
+    createMemoryRecord(
+      memoryRecord
+    );
+
+  return JSON.stringify({
+    schemaVersion:
+      MEMORY_CONTENT_SCHEMA_VERSION,
+
+    source:
+      canonical.source,
+
+    context:
+      canonical.context,
+
+    value:
+      canonical.value,
+
+    observedAt:
+      canonical.observedAt,
+  });
+}
+
+export function deserializeMemoryRecord({
+  content,
+  status,
+  confidence = null,
+  supersedesId = null,
+} = {}) {
+  const serialized =
+    requireNonEmptyString(
+      content,
+      "content"
+    );
+
+  let decoded;
+
+  try {
+    decoded =
+      JSON.parse(serialized);
+  } catch {
+    throw new Error(
+      "Stored memory content is not valid canonical JSON"
+    );
+  }
+
+  if (
+    !decoded ||
+    typeof decoded !== "object" ||
+    decoded.schemaVersion !==
+      MEMORY_CONTENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      "Unsupported stored memory content schema"
+    );
+  }
+
+  return createMemoryRecord({
+    source:
+      decoded.source,
+
+    context:
+      decoded.context ?? null,
+
+    status,
+
+    confidence,
+
+    value:
+      decoded.value ?? null,
+
+    observedAt:
+      decoded.observedAt ?? null,
+
+    supersedesId,
   });
 }
 
@@ -124,14 +230,18 @@ export function supersedeMemoryRecord(
   const replacement =
     createMemoryRecord({
       ...replacementInput,
-      supersedesId: previousId,
+      supersedesId:
+        previousId,
     });
 
   return Object.freeze({
-    previous: Object.freeze({
-      ...previousRecord,
-      status: MEMORY_STATUS.SUPERSEDED,
-    }),
+    previous:
+      Object.freeze({
+        ...previousRecord,
+        status:
+          MEMORY_STATUS.SUPERSEDED,
+      }),
+
     replacement,
   });
 }
@@ -140,15 +250,22 @@ export function isMemoryApplicable({
   record,
   currentContext = null,
 } = {}) {
-  if (!record || typeof record !== "object") {
+  if (
+    !record ||
+    typeof record !== "object"
+  ) {
     return false;
   }
 
   if (
-    record.status === MEMORY_STATUS.UNKNOWN ||
-    record.status === MEMORY_STATUS.STALE ||
-    record.status === MEMORY_STATUS.CONTRADICTED ||
-    record.status === MEMORY_STATUS.SUPERSEDED
+    record.status ===
+      MEMORY_STATUS.UNKNOWN ||
+    record.status ===
+      MEMORY_STATUS.STALE ||
+    record.status ===
+      MEMORY_STATUS.CONTRADICTED ||
+    record.status ===
+      MEMORY_STATUS.SUPERSEDED
   ) {
     return false;
   }
@@ -156,10 +273,14 @@ export function isMemoryApplicable({
   if (
     record.context &&
     currentContext &&
-    record.context !== currentContext
+    record.context !==
+      currentContext
   ) {
     return false;
   }
 
-  return record.status === MEMORY_STATUS.KNOWN;
+  return (
+    record.status ===
+    MEMORY_STATUS.KNOWN
+  );
 }

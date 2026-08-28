@@ -14,6 +14,8 @@ export const PARTICIPANT_OWNED_TABLES = Object.freeze([
   "app_events",
 ]);
 
+const verifiedRepositories = new WeakSet();
+
 function requireAllowedTable(table) {
   if (!PARTICIPANT_OWNED_TABLES.includes(table)) {
     throw new Error(
@@ -31,84 +33,162 @@ export function createRuntimeRepositories(context) {
   } = requireVerifiedSupabaseContext(context);
 
   function tableFor(table) {
-    return supabase.from(requireAllowedTable(table));
+    return supabase.from(
+      requireAllowedTable(table)
+    );
   }
 
-  async function selectOwned(table, options = {}) {
+  async function selectOwned(
+    table,
+    options = {}
+  ) {
     let query = tableFor(table)
       .select(options.select ?? "*")
       .eq("user_id", ownerId);
 
     if (options.orderBy) {
-      query = query.order(options.orderBy, {
-        ascending: options.ascending ?? true,
-      });
+      query = query.order(
+        options.orderBy,
+        {
+          ascending:
+            options.ascending ?? true,
+        }
+      );
     }
 
-    if (Number.isInteger(options.limit)) {
-      query = query.limit(options.limit);
+    if (
+      Number.isInteger(options.limit)
+    ) {
+      query = query.limit(
+        options.limit
+      );
     }
 
-    const { data, error } = await query;
+    const {
+      data,
+      error,
+    } = await query;
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
+
     return data ?? [];
   }
 
-  async function insertOwned(table, values = {}) {
+  async function insertOwned(
+    table,
+    values = {}
+  ) {
     const payload = {
       ...values,
       user_id: ownerId,
     };
 
-    const { data, error } = await tableFor(table)
+    const {
+      data,
+      error,
+    } = await tableFor(table)
       .insert(payload)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
+
     return data ?? [];
   }
 
-  async function updateOwned(table, id, values = {}) {
+  async function updateOwned(
+    table,
+    id,
+    values = {}
+  ) {
     if (!id) {
-      throw new Error("A record id is required");
+      throw new Error(
+        "A record id is required"
+      );
     }
 
-    const payload = { ...values };
+    const payload = {
+      ...values,
+    };
 
     delete payload.user_id;
     delete payload.owner_id;
 
-    const { data, error } = await tableFor(table)
+    const {
+      data,
+      error,
+    } = await tableFor(table)
       .update(payload)
       .eq("id", id)
       .eq("user_id", ownerId)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
+
     return data ?? [];
   }
 
-  async function deleteOwned(table, id) {
+  async function deleteOwned(
+    table,
+    id
+  ) {
     if (!id) {
-      throw new Error("A record id is required");
+      throw new Error(
+        "A record id is required"
+      );
     }
 
-    const { data, error } = await tableFor(table)
+    const {
+      data,
+      error,
+    } = await tableFor(table)
       .delete()
       .eq("id", id)
       .eq("user_id", ownerId)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
+
     return data ?? [];
   }
 
-  return Object.freeze({
-    ownerId,
-    selectOwned,
-    insertOwned,
-    updateOwned,
-    deleteOwned,
-  });
+  const repositories =
+    Object.freeze({
+      ownerId,
+      selectOwned,
+      insertOwned,
+      updateOwned,
+      deleteOwned,
+    });
+
+  verifiedRepositories.add(
+    repositories
+  );
+
+  return repositories;
+}
+
+export function requireVerifiedRuntimeRepositories(
+  repositories
+) {
+  if (
+    !repositories ||
+    typeof repositories !== "object" ||
+    !verifiedRepositories.has(
+      repositories
+    )
+  ) {
+    throw new Error(
+      "Verified runtime repositories are required"
+    );
+  }
+
+  return repositories;
 }
