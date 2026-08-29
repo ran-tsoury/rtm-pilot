@@ -1,11 +1,11 @@
 create or replace function public.rtm_supersede_memory(
-  p_previous_id text,
+  p_previous_id uuid,
   p_memory_level text,
   p_memory_type text,
   p_content text,
   p_status text,
   p_confidence text,
-  p_source_episode_id text default null
+  p_source_episode_id uuid default null
 )
 returns setof public.memory_items
 language plpgsql
@@ -24,7 +24,7 @@ begin
   select *
   into v_previous
   from public.memory_items
-  where id::text = p_previous_id
+  where id = p_previous_id
     and user_id = auth.uid()
   for update;
 
@@ -59,10 +59,7 @@ begin
     p_content,
     p_status,
     p_confidence,
-    nullif(
-      p_source_episode_id,
-      ''
-    ),
+    p_source_episode_id,
     v_previous.id,
     false
   )
@@ -76,24 +73,24 @@ $$;
 
 revoke all
 on function public.rtm_supersede_memory(
+  uuid,
   text,
   text,
   text,
   text,
   text,
-  text,
-  text
+  uuid
 )
 from public;
 
 grant execute
 on function public.rtm_supersede_memory(
+  uuid,
   text,
   text,
   text,
   text,
   text,
-  text,
-  text
+  uuid
 )
 to authenticated;
