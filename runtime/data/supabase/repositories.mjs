@@ -26,6 +26,19 @@ function requireAllowedTable(table) {
   return table;
 }
 
+function requireNonEmptyString(value, field) {
+  if (
+    typeof value !== "string" ||
+    value.trim() === ""
+  ) {
+    throw new Error(
+      `${field} is required`
+    );
+  }
+
+  return value.trim();
+}
+
 export function createRuntimeRepositories(context) {
   const {
     supabase,
@@ -159,6 +172,84 @@ export function createRuntimeRepositories(context) {
     return data ?? [];
   }
 
+  async function supersedeMemoryOwned({
+    previousId,
+    memoryLevel,
+    memoryType,
+    content,
+    status,
+    confidence = null,
+    sourceEpisodeId = null,
+  } = {}) {
+    const id =
+      requireNonEmptyString(
+        previousId,
+        "previousId"
+      );
+
+    const normalizedMemoryLevel =
+      requireNonEmptyString(
+        memoryLevel,
+        "memoryLevel"
+      );
+
+    const normalizedMemoryType =
+      requireNonEmptyString(
+        memoryType,
+        "memoryType"
+      );
+
+    const normalizedContent =
+      requireNonEmptyString(
+        content,
+        "content"
+      );
+
+    const normalizedStatus =
+      requireNonEmptyString(
+        status,
+        "status"
+      );
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "rtm_supersede_memory",
+      {
+        p_previous_id:
+          id,
+
+        p_memory_level:
+          normalizedMemoryLevel,
+
+        p_memory_type:
+          normalizedMemoryType,
+
+        p_content:
+          normalizedContent,
+
+        p_status:
+          normalizedStatus,
+
+        p_confidence:
+          confidence === null ||
+          confidence === undefined
+            ? null
+            : String(confidence),
+
+        p_source_episode_id:
+          sourceEpisodeId ?? null,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    return data ?? [];
+  }
+
   const repositories =
     Object.freeze({
       ownerId,
@@ -166,6 +257,7 @@ export function createRuntimeRepositories(context) {
       insertOwned,
       updateOwned,
       deleteOwned,
+      supersedeMemoryOwned,
     });
 
   verifiedRepositories.add(

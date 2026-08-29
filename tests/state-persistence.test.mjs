@@ -22,9 +22,14 @@ import {
   OUTCOME_STATUS,
 } from "../runtime/data/experience/experience-lifecycle.mjs";
 
-const previousUrl = process.env.SUPABASE_URL;
-const previousAnonKey = process.env.SUPABASE_ANON_KEY;
-const originalFetch = globalThis.fetch;
+const previousUrl =
+  process.env.SUPABASE_URL;
+
+const previousAnonKey =
+  process.env.SUPABASE_ANON_KEY;
+
+const originalFetch =
+  globalThis.fetch;
 
 process.env.SUPABASE_URL =
   "https://example.supabase.co";
@@ -33,29 +38,43 @@ process.env.SUPABASE_ANON_KEY =
   "test-anon-key";
 
 process.on("exit", () => {
-  globalThis.fetch = originalFetch;
+  globalThis.fetch =
+    originalFetch;
 
-  if (previousUrl === undefined) {
-    delete process.env.SUPABASE_URL;
+  if (
+    previousUrl === undefined
+  ) {
+    delete process.env
+      .SUPABASE_URL;
   } else {
-    process.env.SUPABASE_URL = previousUrl;
+    process.env.SUPABASE_URL =
+      previousUrl;
   }
 
-  if (previousAnonKey === undefined) {
-    delete process.env.SUPABASE_ANON_KEY;
+  if (
+    previousAnonKey ===
+    undefined
+  ) {
+    delete process.env
+      .SUPABASE_ANON_KEY;
   } else {
-    process.env.SUPABASE_ANON_KEY =
+    process.env
+      .SUPABASE_ANON_KEY =
       previousAnonKey;
   }
 });
 
-function jsonResponse(body, status = 200) {
+function jsonResponse(
+  body,
+  status = 200
+) {
   return new Response(
     JSON.stringify(body),
     {
       status,
       headers: {
-        "content-type": "application/json",
+        "content-type":
+          "application/json",
       },
     }
   );
@@ -70,7 +89,9 @@ function parseBody(body) {
     return null;
   }
 
-  if (typeof body === "string") {
+  if (
+    typeof body === "string"
+  ) {
     return JSON.parse(body);
   }
 
@@ -78,10 +99,16 @@ function parseBody(body) {
 }
 
 function tableFromUrl(url) {
-  const parsed = new URL(url);
-  const marker = "/rest/v1/";
+  const parsed =
+    new URL(url);
+
+  const marker =
+    "/rest/v1/";
+
   const index =
-    parsed.pathname.indexOf(marker);
+    parsed.pathname.indexOf(
+      marker
+    );
 
   if (index === -1) {
     return null;
@@ -89,15 +116,20 @@ function tableFromUrl(url) {
 
   return decodeURIComponent(
     parsed.pathname.slice(
-      index + marker.length
+      index +
+        marker.length
     )
   );
 }
 
 function idFromUrl(url) {
-  const parsed = new URL(url);
+  const parsed =
+    new URL(url);
+
   const raw =
-    parsed.searchParams.get("id");
+    parsed.searchParams.get(
+      "id"
+    );
 
   if (
     typeof raw !== "string" ||
@@ -119,25 +151,34 @@ function installFetchMock({
 
   for (
     const [table, rows]
-    of Object.entries(selectedRows)
+    of Object.entries(
+      selectedRows
+    )
   ) {
     database[table] =
-      rows.map((row) => ({
-        ...row,
-      }));
+      rows.map(
+        (row) => ({
+          ...row,
+        })
+      );
   }
 
   globalThis.fetch =
-    async (input, init = {}) => {
+    async (
+      input,
+      init = {}
+    ) => {
       const url =
-        typeof input === "string"
+        typeof input ===
+        "string"
           ? input
           : input.url;
 
       const method =
         init.method ??
         (
-          typeof input === "object"
+          typeof input ===
+          "object"
             ? input.method
             : undefined
         ) ??
@@ -146,7 +187,8 @@ function installFetchMock({
       const body =
         init.body ??
         (
-          typeof input === "object"
+          typeof input ===
+          "object"
             ? input.body
             : undefined
         );
@@ -158,19 +200,136 @@ function installFetchMock({
       });
 
       if (
-        url.includes("/auth/v1/user")
+        url.includes(
+          "/auth/v1/user"
+        )
       ) {
         return jsonResponse({
           id: userId,
-          aud: "authenticated",
-          role: "authenticated",
+          aud:
+            "authenticated",
+          role:
+            "authenticated",
           email:
             `${userId}@example.com`,
         });
       }
 
       if (
-        !url.includes("/rest/v1/")
+        url.includes(
+          "/rest/v1/rpc/rtm_supersede_memory"
+        )
+      ) {
+        if (
+          method !== "POST"
+        ) {
+          throw new Error(
+            `Unexpected RPC method: ${method}`
+          );
+        }
+
+        const params =
+          parseBody(body);
+
+        if (
+          !database.memory_items
+        ) {
+          database.memory_items =
+            [];
+        }
+
+        const previousIndex =
+          database.memory_items
+            .findIndex(
+              (row) =>
+                row.id ===
+                  params
+                    .p_previous_id &&
+                row.user_id ===
+                  userId
+            );
+
+        if (
+          previousIndex === -1
+        ) {
+          return jsonResponse(
+            {
+              message:
+                "Owner-scoped memory was not found",
+            },
+            400
+          );
+        }
+
+        database.memory_items[
+          previousIndex
+        ] = {
+          ...database
+            .memory_items[
+              previousIndex
+            ],
+
+          status:
+            MEMORY_STATUS
+              .SUPERSEDED,
+
+          do_not_reuse:
+            true,
+        };
+
+        const replacement = {
+          id:
+            "replacement-memory-id",
+
+          user_id:
+            userId,
+
+          memory_level:
+            params
+              .p_memory_level,
+
+          memory_type:
+            params
+              .p_memory_type,
+
+          content:
+            params
+              .p_content,
+
+          status:
+            params
+              .p_status,
+
+          confidence:
+            params
+              .p_confidence,
+
+          source_episode_id:
+            params
+              .p_source_episode_id ??
+            null,
+
+          supersedes_memory_id:
+            params
+              .p_previous_id,
+
+          do_not_reuse:
+            false,
+        };
+
+        database.memory_items.push(
+          replacement
+        );
+
+        return jsonResponse([
+          replacement,
+        ]);
+      }
+
+      if (
+        !url.includes(
+          "/rest/v1/"
+        )
       ) {
         throw new Error(
           `Unexpected fetch URL: ${url}`
@@ -181,16 +340,21 @@ function installFetchMock({
         tableFromUrl(url);
 
       if (!database[table]) {
-        database[table] = [];
+        database[table] =
+          [];
       }
 
-      if (method === "GET") {
+      if (
+        method === "GET"
+      ) {
         return jsonResponse(
           database[table]
         );
       }
 
-      if (method === "POST") {
+      if (
+        method === "POST"
+      ) {
         const payload =
           parseBody(body);
 
@@ -198,17 +362,22 @@ function installFetchMock({
           id:
             payload.id ??
             "inserted-id",
+
           ...payload,
         };
 
-        database[table].push(row);
+        database[table].push(
+          row
+        );
 
         return jsonResponse([
           row,
         ]);
       }
 
-      if (method === "PATCH") {
+      if (
+        method === "PATCH"
+      ) {
         const payload =
           parseBody(body);
 
@@ -224,11 +393,14 @@ function installFetchMock({
 
         const existing =
           index >= 0
-            ? database[table][index]
+            ? database[table][
+                index
+              ]
             : {
                 id:
                   id ??
                   "updated-id",
+
                 user_id:
                   userId,
               };
@@ -238,13 +410,18 @@ function installFetchMock({
           ...payload,
         };
 
-        if (index >= 0) {
-          database[table][index] =
+        if (
+          index >= 0
+        ) {
+          database[table][
+            index
+          ] =
             updated;
         } else {
-          database[table].push(
-            updated
-          );
+          database[table]
+            .push(
+              updated
+            );
         }
 
         return jsonResponse([
@@ -271,7 +448,9 @@ async function createVerifiedHarness({
     calls,
     database,
   } = installFetchMock({
-    userId: ownerId,
+    userId:
+      ownerId,
+
     selectedRows,
   });
 
@@ -308,7 +487,8 @@ function findRestCalls(
       call.url.includes(
         `/rest/v1/${table}`
       ) &&
-      call.method === method
+      call.method ===
+        method
   );
 }
 
@@ -318,7 +498,8 @@ test(
     assert.throws(
       () =>
         createStatePersistence({
-          ownerId: "user-a",
+          ownerId:
+            "user-a",
 
           async selectOwned() {
             return [];
@@ -329,6 +510,10 @@ test(
           },
 
           async updateOwned() {
+            return [];
+          },
+
+          async supersedeMemoryOwned() {
             return [];
           },
         }),
@@ -367,13 +552,18 @@ test(
     const result =
       await persistence
         .saveJourneyState({
-          currentStage: 1,
+          currentStage:
+            1,
+
           currentState:
             "ACTIVE",
+
           currentLoad:
             "LOW",
+
           supportLevel:
             "STANDARD",
+
           context:
             "HOME",
         });
@@ -426,17 +616,20 @@ test(
     );
 
     assert.deepEqual(
-      payload.open_context_exceptions,
+      payload
+        .open_context_exceptions,
       []
     );
 
     assert.equal(
-      payload.last_reality_gate_at,
+      payload
+        .last_reality_gate_at,
       null
     );
 
     assert.equal(
-      payload.last_meaningful_return_at,
+      payload
+        .last_meaningful_return_at,
       null
     );
 
@@ -465,10 +658,13 @@ test(
             {
               id:
                 "journey-1",
+
               user_id:
                 "user-a",
+
               current_stage:
                 1,
+
               current_state:
                 "ACTIVE",
             },
@@ -478,13 +674,18 @@ test(
 
     await persistence
       .saveJourneyState({
-        currentStage: 1,
+        currentStage:
+          1,
+
         currentState:
           "RETURNING",
+
         currentLoad:
           "MEDIUM",
+
         supportLevel:
           "HIGH",
+
         context:
           "WORK",
       });
@@ -656,31 +857,208 @@ test(
 );
 
 test(
-  "memory supersession fails closed when atomic repository boundary is unavailable",
+  "memory correction supersedes prior record and persists replacement through dedicated atomic boundary",
   async () => {
+    const previousRecord = {
+      id:
+        "memory-1",
+
+      source:
+        "participant-report",
+
+      context:
+        "HOME",
+
+      status:
+        MEMORY_STATUS.KNOWN,
+
+      confidence:
+        0.7,
+
+      value:
+        "Old interpretation",
+
+      observedAt:
+        "2026-08-28T10:00:00.000Z",
+
+      supersedesId:
+        null,
+    };
+
     const {
       persistence,
       calls,
+      database,
     } =
-      await createVerifiedHarness();
+      await createVerifiedHarness({
+        selectedRows: {
+          memory_items: [
+            {
+              id:
+                "memory-1",
 
-    await assert.rejects(
-      () =>
-        persistence
-          .supersedeMemory(),
-      /Atomic memory supersession is not available through the current repository boundary/
-    );
+              user_id:
+                "user-a",
 
-    const updates =
-      findRestCalls(
-        calls,
-        "memory_items",
-        "PATCH"
+              memory_level:
+                "WORKING",
+
+              memory_type:
+                "FACT",
+
+              content:
+                JSON.stringify(
+                  previousRecord
+                ),
+
+              status:
+                MEMORY_STATUS.KNOWN,
+
+              confidence:
+                "0.7",
+
+              source_episode_id:
+                "episode-old",
+
+              supersedes_memory_id:
+                null,
+
+              do_not_reuse:
+                false,
+            },
+          ],
+        },
+      });
+
+    const replacement =
+      await persistence
+        .supersedeMemory(
+          previousRecord,
+          {
+            source:
+              "participant-correction",
+
+            context:
+              "HOME",
+
+            status:
+              MEMORY_STATUS.KNOWN,
+
+            confidence:
+              0.95,
+
+            value:
+              "Corrected interpretation",
+
+            observedAt:
+              "2026-08-29T10:00:00.000Z",
+          },
+          {
+            memoryLevel:
+              "WORKING",
+
+            memoryType:
+              "FACT",
+
+            sourceEpisodeId:
+              "episode-new",
+          }
+        );
+
+    const rpcCalls =
+      calls.filter(
+        (call) =>
+          call.url.includes(
+            "/rest/v1/rpc/rtm_supersede_memory"
+          )
       );
 
     assert.equal(
-      updates.length,
-      0
+      rpcCalls.length,
+      1
+    );
+
+    assert.equal(
+      rpcCalls[0].method,
+      "POST"
+    );
+
+    const rpcPayload =
+      parseBody(
+        rpcCalls[0].body
+      );
+
+    assert.equal(
+      rpcPayload
+        .p_previous_id,
+      "memory-1"
+    );
+
+    assert.equal(
+      rpcPayload
+        .p_memory_level,
+      "WORKING"
+    );
+
+    assert.equal(
+      rpcPayload
+        .p_memory_type,
+      "FACT"
+    );
+
+    assert.equal(
+      rpcPayload
+        .p_status,
+      MEMORY_STATUS.KNOWN
+    );
+
+    assert.equal(
+      rpcPayload
+        .p_confidence,
+      "0.95"
+    );
+
+    assert.equal(
+      rpcPayload
+        .p_source_episode_id,
+      "episode-new"
+    );
+
+    const previousStored =
+      database.memory_items
+        .find(
+          (row) =>
+            row.id ===
+            "memory-1"
+        );
+
+    assert.equal(
+      previousStored.status,
+      MEMORY_STATUS
+        .SUPERSEDED
+    );
+
+    assert.equal(
+      previousStored
+        .do_not_reuse,
+      true
+    );
+
+    assert.equal(
+      replacement
+        .supersedes_memory_id,
+      "memory-1"
+    );
+
+    assert.equal(
+      replacement
+        .do_not_reuse,
+      false
+    );
+
+    assert.equal(
+      replacement.user_id,
+      "user-a"
     );
   }
 );
@@ -998,7 +1376,8 @@ test(
           "Felt calmer",
 
         outcome_status:
-          OUTCOME_STATUS.POSITIVE,
+          OUTCOME_STATUS
+            .POSITIVE,
 
         outcome_at:
           "2026-08-28T01:10:00.000Z",
