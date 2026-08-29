@@ -802,12 +802,6 @@ export function createStatePersistence(
       new Date()
         .toISOString();
 
-    const physicalFact =
-      canonical.event ??
-      canonical.behavior ??
-      canonical.outcome ??
-      null;
-
     const canonicalContent =
       JSON.parse(
         serializeEvidenceRecord(
@@ -825,7 +819,7 @@ export function createStatePersistence(
 
       fact:
         toStorageText(
-          physicalFact
+          canonical.fact
         ),
 
       meaning:
@@ -864,8 +858,7 @@ export function createStatePersistence(
         ),
 
       outcome_status:
-        canonical.outcomeStatus ??
-        null,
+        canonical.outcomeStatus,
 
       confidence:
         canonical.confidence ??
@@ -1116,25 +1109,17 @@ export function createStatePersistence(
       record.status;
 
     const allowedNext = {
-      [EXPERIENCE_STATUS
-        .SUGGESTED]:
-        EXPERIENCE_STATUS
-          .SELECTED,
+      [EXPERIENCE_STATUS.SUGGESTED]:
+        EXPERIENCE_STATUS.SELECTED,
 
-      [EXPERIENCE_STATUS
-        .SELECTED]:
-        EXPERIENCE_STATUS
-          .EXECUTED,
+      [EXPERIENCE_STATUS.SELECTED]:
+        EXPERIENCE_STATUS.EXECUTED,
 
-      [EXPERIENCE_STATUS
-        .EXECUTED]:
-        EXPERIENCE_STATUS
-          .OUTCOME,
+      [EXPERIENCE_STATUS.EXECUTED]:
+        EXPERIENCE_STATUS.OUTCOME,
 
-      [EXPERIENCE_STATUS
-        .OUTCOME]:
-        EXPERIENCE_STATUS
-          .CONFIDENCE,
+      [EXPERIENCE_STATUS.OUTCOME]:
+        EXPERIENCE_STATUS.CONFIDENCE,
     };
 
     if (

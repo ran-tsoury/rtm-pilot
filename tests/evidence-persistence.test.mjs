@@ -20,6 +20,10 @@ import {
   createEvidenceRecord,
 } from "../runtime/data/evidence/evidence-store.mjs";
 
+import {
+  OUTCOME_STATUS,
+} from "../runtime/data/experience/experience-lifecycle.mjs";
+
 const previousUrl =
   process.env.SUPABASE_URL;
 
@@ -282,29 +286,32 @@ function validAcceptedEvidence(
 ) {
   return {
     evidenceType:
-      EVIDENCE_TYPE.ACTION,
+      EVIDENCE_TYPE.OUTCOME,
 
     admissionStatus:
       EVIDENCE_ADMISSION_STATUS
         .ACCEPTED,
 
     admissionReason:
-      "Observed behavior is relevant, attributable and context-qualified",
+      "Observed fact and reported outcome are relevant, reliable, attributable and context-qualified",
 
     strength:
       EVIDENCE_STRENGTH.E1,
 
+    fact:
+      "Participant executed the observed action",
+
     event:
-      "Participant performed the observed action",
+      "Observed execution",
 
     behavior:
-      "Observed action",
+      "Completed action",
 
     outcome:
-      null,
+      "Participant reported that the action helped",
 
     outcomeStatus:
-      null,
+      OUTCOME_STATUS.POSITIVE,
 
     context:
       "HOME",
@@ -337,7 +344,7 @@ function validAcceptedEvidence(
       0.8,
 
     sourceKind:
-      "OBSERVED_BEHAVIOR",
+      "OBSERVED_OUTCOME",
 
     episodeId:
       "episode-1",
@@ -358,7 +365,7 @@ function validAcceptedEvidence(
 }
 
 test(
-  "accepted Evidence persists through owner-scoped repository boundary",
+  "accepted Evidence persists only with explicit fact and reported non-UNKNOWN outcome",
   async () => {
     const {
       database,
@@ -396,6 +403,21 @@ test(
     );
 
     assert.equal(
+      saved.fact,
+      "Participant executed the observed action"
+    );
+
+    assert.equal(
+      saved.outcome,
+      "Participant reported that the action helped"
+    );
+
+    assert.equal(
+      saved.outcome_status,
+      OUTCOME_STATUS.POSITIVE
+    );
+
+    assert.equal(
       saved.admitted,
       true
     );
@@ -426,7 +448,7 @@ test(
 );
 
 test(
-  "UNKNOWN outcome cannot create accepted Evidence",
+  "accepted Evidence rejects UNKNOWN outcome",
   () => {
     assert.throws(
       () =>
@@ -436,10 +458,45 @@ test(
               null,
 
             outcomeStatus:
-              "UNKNOWN",
+              OUTCOME_STATUS.UNKNOWN,
           })
         ),
-      /UNKNOWN outcome cannot create accepted Evidence/
+      /Accepted Evidence requires a reported outcome/
+    );
+  }
+);
+
+test(
+  "accepted Evidence rejects missing outcome even when fact exists",
+  () => {
+    assert.throws(
+      () =>
+        createEvidenceRecord(
+          validAcceptedEvidence({
+            outcome:
+              null,
+
+            outcomeStatus:
+              null,
+          })
+        ),
+      /Accepted Evidence requires a reported outcome/
+    );
+  }
+);
+
+test(
+  "accepted Evidence rejects missing explicit fact",
+  () => {
+    assert.throws(
+      () =>
+        createEvidenceRecord(
+          validAcceptedEvidence({
+            fact:
+              null,
+          })
+        ),
+      /Accepted Evidence requires an explicit fact/
     );
   }
 );
@@ -452,12 +509,10 @@ test(
         createEvidenceRecord(
           validAcceptedEvidence({
             evidenceType:
-              EVIDENCE_TYPE
-                .IDENTITY,
+              EVIDENCE_TYPE.IDENTITY,
 
             strength:
-              EVIDENCE_STRENGTH
-                .E1,
+              EVIDENCE_STRENGTH.E1,
           })
         ),
       /single Evidence event cannot establish Identity Evidence/
@@ -477,19 +532,29 @@ test(
     const candidate =
       createEvidenceRecord({
         evidenceType:
-          EVIDENCE_TYPE
-            .ACTION,
+          EVIDENCE_TYPE.ACTION,
 
         admissionStatus:
           EVIDENCE_ADMISSION_STATUS
             .CANDIDATE,
 
         strength:
-          EVIDENCE_STRENGTH
-            .E0,
+          EVIDENCE_STRENGTH.E0,
+
+        fact:
+          null,
 
         event:
           "Potential action evidence",
+
+        behavior:
+          "Potential action",
+
+        outcome:
+          null,
+
+        outcomeStatus:
+          OUTCOME_STATUS.UNKNOWN,
 
         context:
           "HOME",
@@ -541,6 +606,22 @@ test(
       database.evidence
         .length,
       0
+    );
+  }
+);
+
+test(
+  "automatic app use cannot become accepted Evidence",
+  () => {
+    assert.throws(
+      () =>
+        createEvidenceRecord(
+          validAcceptedEvidence({
+            sourceKind:
+              "APP_USE",
+          })
+        ),
+      /APP_USE cannot become automatic Evidence/
     );
   }
 );

@@ -1,3 +1,7 @@
+import {
+  OUTCOME_STATUS,
+} from "../experience/experience-lifecycle.mjs";
+
 export const EVIDENCE_TYPE =
   Object.freeze({
     RECOGNITION:
@@ -39,57 +43,40 @@ export const EVIDENCE_ADMISSION_STATUS =
 
 export const EVIDENCE_STRENGTH =
   Object.freeze({
-    E0:
-      "E0",
-
-    E1:
-      "E1",
-
-    E2:
-      "E2",
-
-    E3:
-      "E3",
-
-    E4:
-      "E4",
-
-    E5:
-      "E5",
+    E0: "E0",
+    E1: "E1",
+    E2: "E2",
+    E3: "E3",
+    E4: "E4",
+    E5: "E5",
   });
 
 export const GATE_DECISION_CONFIDENCE =
   Object.freeze({
-    LOW:
-      "LOW",
-
-    MEDIUM:
-      "MEDIUM",
-
-    HIGH:
-      "HIGH",
+    LOW: "LOW",
+    MEDIUM: "MEDIUM",
+    HIGH: "HIGH",
   });
 
 export const GATE_NEXT_ACTION =
   Object.freeze({
-    PASS:
-      "PASS",
-
-    STAY:
-      "STAY",
-
-    DEEPEN:
-      "DEEPEN",
-
-    RECOVER:
-      "RECOVER",
-
-    REMAP:
-      "REMAP",
+    PASS: "PASS",
+    STAY: "STAY",
+    DEEPEN: "DEEPEN",
+    RECOVER: "RECOVER",
+    REMAP: "REMAP",
   });
 
 export const EVIDENCE_SCHEMA_VERSION =
   1;
+
+const ACCEPTED_OUTCOME_STATUSES =
+  new Set([
+    OUTCOME_STATUS.POSITIVE,
+    OUTCOME_STATUS.NEUTRAL,
+    OUTCOME_STATUS.NEGATIVE,
+    OUTCOME_STATUS.MIXED,
+  ]);
 
 function requireObject(
   value,
@@ -169,7 +156,7 @@ function requireEnumValue(
   return value;
 }
 
-function requireConfidence(
+function normalizeConfidence(
   value
 ) {
   if (
@@ -258,15 +245,13 @@ function hasMeaningfulValue(
   if (
     typeof value === "string"
   ) {
-    return (
-      value.trim() !== ""
-    );
+    return value.trim() !== "";
   }
 
   return true;
 }
 
-function requireAdmissionReason(
+function normalizeAdmissionReason(
   status,
   reason
 ) {
@@ -277,121 +262,25 @@ function requireAdmissionReason(
     );
 
   if (
-    status ===
-      EVIDENCE_ADMISSION_STATUS
-        .ACCEPTED &&
+    (
+      status ===
+        EVIDENCE_ADMISSION_STATUS
+          .ACCEPTED ||
+      status ===
+        EVIDENCE_ADMISSION_STATUS
+          .REJECTED
+    ) &&
     !normalized
   ) {
     throw new Error(
-      "Accepted Evidence requires an admission reason"
-    );
-  }
-
-  if (
-    status ===
-      EVIDENCE_ADMISSION_STATUS
-        .REJECTED &&
-    !normalized
-  ) {
-    throw new Error(
-      "Rejected Evidence requires an admission reason"
+      `${status} Evidence requires an admission reason`
     );
   }
 
   return normalized;
 }
 
-function validateAdmissionSemantics({
-  admissionStatus,
-  strength,
-  relevance,
-  reliability,
-  attribution,
-  contextKnown,
-}) {
-  if (
-    admissionStatus ===
-      EVIDENCE_ADMISSION_STATUS
-        .CANDIDATE
-  ) {
-    if (
-      strength !==
-      EVIDENCE_STRENGTH.E0
-    ) {
-      throw new Error(
-        "Evidence Candidate must remain at strength E0"
-      );
-    }
-
-    return;
-  }
-
-  if (
-    admissionStatus ===
-      EVIDENCE_ADMISSION_STATUS
-        .REJECTED
-  ) {
-    if (
-      strength !==
-      EVIDENCE_STRENGTH.E0
-    ) {
-      throw new Error(
-        "Rejected Evidence cannot receive accepted Evidence strength"
-      );
-    }
-
-    return;
-  }
-
-  if (
-    admissionStatus ===
-      EVIDENCE_ADMISSION_STATUS
-        .ACCEPTED
-  ) {
-    if (
-      strength ===
-      EVIDENCE_STRENGTH.E0
-    ) {
-      throw new Error(
-        "Accepted Evidence must be at least E1"
-      );
-    }
-
-    if (
-      relevance !== true
-    ) {
-      throw new Error(
-        "Accepted Evidence requires relevance"
-      );
-    }
-
-    if (
-      reliability !== true
-    ) {
-      throw new Error(
-        "Accepted Evidence requires reliability"
-      );
-    }
-
-    if (
-      attribution !== true
-    ) {
-      throw new Error(
-        "Accepted Evidence requires attribution"
-      );
-    }
-
-    if (
-      contextKnown !== true
-    ) {
-      throw new Error(
-        "Accepted Evidence requires known context"
-      );
-    }
-  }
-}
-
-function validateStrengthSemantics({
+function validateStrength({
   strength,
   repeated,
   generalized,
@@ -456,13 +345,131 @@ function validateStrengthSemantics({
   }
 }
 
+function validateAdmission({
+  admissionStatus,
+  strength,
+  fact,
+  outcome,
+  outcomeStatus,
+  relevance,
+  reliability,
+  attribution,
+  contextKnown,
+}) {
+  if (
+    admissionStatus ===
+      EVIDENCE_ADMISSION_STATUS
+        .CANDIDATE
+  ) {
+    if (
+      strength !==
+      EVIDENCE_STRENGTH.E0
+    ) {
+      throw new Error(
+        "Evidence Candidate must remain at strength E0"
+      );
+    }
+
+    return;
+  }
+
+  if (
+    admissionStatus ===
+      EVIDENCE_ADMISSION_STATUS
+        .REJECTED
+  ) {
+    if (
+      strength !==
+      EVIDENCE_STRENGTH.E0
+    ) {
+      throw new Error(
+        "Rejected Evidence cannot receive accepted Evidence strength"
+      );
+    }
+
+    return;
+  }
+
+  if (
+    strength ===
+      EVIDENCE_STRENGTH.E0
+  ) {
+    throw new Error(
+      "Accepted Evidence must be at least E1"
+    );
+  }
+
+  if (
+    !hasMeaningfulValue(
+      fact
+    )
+  ) {
+    throw new Error(
+      "Accepted Evidence requires an explicit fact"
+    );
+  }
+
+  if (
+    !hasMeaningfulValue(
+      outcome
+    )
+  ) {
+    throw new Error(
+      "Accepted Evidence requires a reported outcome"
+    );
+  }
+
+  if (
+    !ACCEPTED_OUTCOME_STATUSES
+      .has(
+        outcomeStatus
+      )
+  ) {
+    throw new Error(
+      "Accepted Evidence requires a non-UNKNOWN outcome status"
+    );
+  }
+
+  if (
+    relevance !== true
+  ) {
+    throw new Error(
+      "Accepted Evidence requires relevance"
+    );
+  }
+
+  if (
+    reliability !== true
+  ) {
+    throw new Error(
+      "Accepted Evidence requires reliability"
+    );
+  }
+
+  if (
+    attribution !== true
+  ) {
+    throw new Error(
+      "Accepted Evidence requires attribution"
+    );
+  }
+
+  if (
+    contextKnown !== true
+  ) {
+    throw new Error(
+      "Accepted Evidence requires known context"
+    );
+  }
+}
+
 function rejectAutomaticInflation({
   sourceKind,
   admissionStatus,
   evidenceType,
   strength,
 }) {
-  const normalizedSource =
+  const normalized =
     optionalString(
       sourceKind,
       "sourceKind"
@@ -470,13 +477,13 @@ function rejectAutomaticInflation({
 
   if (
     admissionStatus !==
-    EVIDENCE_ADMISSION_STATUS
-      .ACCEPTED
+      EVIDENCE_ADMISSION_STATUS
+        .ACCEPTED
   ) {
-    return normalizedSource;
+    return normalized;
   }
 
-  const prohibitedAutomaticSources =
+  const prohibited =
     new Set([
       "APP_USE",
       "CONTENT_COMPLETION",
@@ -487,13 +494,12 @@ function rejectAutomaticInflation({
     ]);
 
   if (
-    prohibitedAutomaticSources
-      .has(
-        normalizedSource
-      )
+    prohibited.has(
+      normalized
+    )
   ) {
     throw new Error(
-      `${normalizedSource} cannot become automatic Evidence`
+      `${normalized} cannot become automatic Evidence`
     );
   }
 
@@ -508,7 +514,7 @@ function rejectAutomaticInflation({
     );
   }
 
-  return normalizedSource;
+  return normalized;
 }
 
 export function createEvidenceRecord(
@@ -542,6 +548,28 @@ export function createEvidenceRecord(
         EVIDENCE_STRENGTH.E0,
       EVIDENCE_STRENGTH,
       "strength"
+    );
+
+  const fact =
+    source.fact ??
+    null;
+
+  const event =
+    source.event ??
+    null;
+
+  const behavior =
+    source.behavior ??
+    null;
+
+  const outcome =
+    source.outcome ??
+    null;
+
+  const outcomeStatus =
+    optionalString(
+      source.outcomeStatus,
+      "outcomeStatus"
     );
 
   const relevance =
@@ -592,16 +620,38 @@ export function createEvidenceRecord(
       "independent"
     );
 
-  validateAdmissionSemantics({
+  if (
+    !hasMeaningfulValue(
+      fact
+    ) &&
+    !hasMeaningfulValue(
+      event
+    ) &&
+    !hasMeaningfulValue(
+      behavior
+    ) &&
+    !hasMeaningfulValue(
+      outcome
+    )
+  ) {
+    throw new Error(
+      "Evidence requires a fact, event, behavior or outcome"
+    );
+  }
+
+  validateAdmission({
     admissionStatus,
     strength,
+    fact,
+    outcome,
+    outcomeStatus,
     relevance,
     reliability,
     attribution,
     contextKnown,
   });
 
-  validateStrengthSemantics({
+  validateStrength({
     strength,
     repeated,
     generalized,
@@ -616,209 +666,153 @@ export function createEvidenceRecord(
         null,
 
       admissionStatus,
-
       evidenceType,
-
       strength,
     });
 
-  const event =
-    source.event ??
-    null;
+  return Object.freeze({
+    schemaVersion:
+      EVIDENCE_SCHEMA_VERSION,
 
-  const behavior =
-    source.behavior ??
-    null;
+    id:
+      optionalString(
+        source.id,
+        "id"
+      ),
 
-  const outcome =
-    source.outcome ??
-    null;
+    timestamp:
+      normalizeTimestamp(
+        source.timestamp,
+        "timestamp"
+      ),
 
-  if (
-    !hasMeaningfulValue(
-      event
-    ) &&
-    !hasMeaningfulValue(
-      behavior
-    ) &&
-    !hasMeaningfulValue(
-      outcome
-    )
-  ) {
-    throw new Error(
-      "Evidence requires an event, behavior or outcome"
-    );
-  }
+    episodeId:
+      optionalString(
+        source.episodeId,
+        "episodeId"
+      ),
 
-  if (
-    source.outcomeStatus ===
-      "UNKNOWN" &&
-    admissionStatus ===
-      EVIDENCE_ADMISSION_STATUS
-        .ACCEPTED
-  ) {
-    throw new Error(
-      "UNKNOWN outcome cannot create accepted Evidence"
-    );
-  }
+    identityStage:
+      source.identityStage ??
+      null,
 
-  const record =
-    Object.freeze({
-      schemaVersion:
-        EVIDENCE_SCHEMA_VERSION,
+    evidenceTarget:
+      optionalString(
+        source.evidenceTarget,
+        "evidenceTarget"
+      ),
 
-      id:
-        optionalString(
-          source.id,
-          "id"
-        ),
+    fact,
 
-      timestamp:
-        normalizeTimestamp(
-          source.timestamp,
-          "timestamp"
-        ),
+    event,
 
-      episodeId:
-        optionalString(
-          source.episodeId,
-          "episodeId"
-        ),
+    behavior,
 
-      identityStage:
-        source.identityStage ??
-        null,
+    outcome,
 
-      evidenceTarget:
-        optionalString(
-          source.evidenceTarget,
-          "evidenceTarget"
-        ),
+    outcomeStatus,
 
-      event,
+    context:
+      source.context ??
+      null,
 
-      behavior,
+    state:
+      source.state ??
+      null,
 
-      outcome,
+    evidenceType,
 
-      outcomeStatus:
-        optionalString(
-          source.outcomeStatus,
-          "outcomeStatus"
-        ),
+    admissionStatus,
 
-      context:
-        source.context ??
-        null,
+    admissionReason:
+      normalizeAdmissionReason(
+        admissionStatus,
+        source.admissionReason
+      ),
 
-      state:
-        source.state ??
-        null,
+    strength,
 
-      evidenceType,
+    relevance,
+    reliability,
+    attribution,
+    contextKnown,
 
-      admissionStatus,
+    repeated,
+    generalized,
+    resilient,
+    independent,
 
-      admissionReason:
-        requireAdmissionReason(
-          admissionStatus,
-          source.admissionReason
-        ),
+    sourceKind,
 
-      strength,
+    confidence:
+      normalizeConfidence(
+        source.confidence
+      ),
 
-      relevance,
+    linkedPrediction:
+      optionalString(
+        source.linkedPrediction,
+        "linkedPrediction"
+      ),
 
-      reliability,
+    linkedMeaning:
+      optionalString(
+        source.linkedMeaning,
+        "linkedMeaning"
+      ),
 
-      attribution,
+    linkedIdentityClaim:
+      optionalString(
+        source.linkedIdentityClaim,
+        "linkedIdentityClaim"
+      ),
 
-      contextKnown,
+    gateDecisionConfidence:
+      source
+        .gateDecisionConfidence ===
+        null ||
+      source
+        .gateDecisionConfidence ===
+        undefined
+        ? null
+        : requireEnumValue(
+            source
+              .gateDecisionConfidence,
+            GATE_DECISION_CONFIDENCE,
+            "gateDecisionConfidence"
+          ),
 
-      repeated,
+    gateContribution:
+      optionalString(
+        source.gateContribution,
+        "gateContribution"
+      ),
 
-      generalized,
+    nextAction:
+      source.nextAction ===
+        null ||
+      source.nextAction ===
+        undefined
+        ? null
+        : requireEnumValue(
+            source.nextAction,
+            GATE_NEXT_ACTION,
+            "nextAction"
+          ),
 
-      resilient,
-
-      independent,
-
-      sourceKind,
-
-      confidence:
-        requireConfidence(
-          source.confidence
-        ),
-
-      linkedPrediction:
-        optionalString(
-          source.linkedPrediction,
-          "linkedPrediction"
-        ),
-
-      linkedMeaning:
-        optionalString(
-          source.linkedMeaning,
-          "linkedMeaning"
-        ),
-
-      linkedIdentityClaim:
-        optionalString(
-          source.linkedIdentityClaim,
-          "linkedIdentityClaim"
-        ),
-
-      gateDecisionConfidence:
-        source
-          .gateDecisionConfidence ===
-          null ||
-        source
-          .gateDecisionConfidence ===
-          undefined
-          ? null
-          : requireEnumValue(
-              source
-                .gateDecisionConfidence,
-              GATE_DECISION_CONFIDENCE,
-              "gateDecisionConfidence"
-            ),
-
-      gateContribution:
-        optionalString(
-          source.gateContribution,
-          "gateContribution"
-        ),
-
-      nextAction:
-        source.nextAction ===
-          null ||
-        source.nextAction ===
-          undefined
-          ? null
-          : requireEnumValue(
-              source.nextAction,
-              GATE_NEXT_ACTION,
-              "nextAction"
-            ),
-
-      provenance:
-        source.provenance ??
-        null,
-    });
-
-  return record;
+    provenance:
+      source.provenance ??
+      null,
+  });
 }
 
 export function serializeEvidenceRecord(
   evidenceRecord
 ) {
-  const canonical =
+  return JSON.stringify(
     createEvidenceRecord(
       evidenceRecord
-    );
-
-  return JSON.stringify(
-    canonical
+    )
   );
 }
 
@@ -829,7 +823,7 @@ export function deserializeEvidenceRecord(
 
   if (
     typeof serialized ===
-    "string"
+      "string"
   ) {
     try {
       decoded =
@@ -851,7 +845,7 @@ export function deserializeEvidenceRecord(
 
   if (
     decoded.schemaVersion !==
-    EVIDENCE_SCHEMA_VERSION
+      EVIDENCE_SCHEMA_VERSION
   ) {
     throw new Error(
       "Unsupported Evidence schema version"
@@ -906,23 +900,16 @@ export function admitEvidenceCandidate(
         .ACCEPTED,
 
     admissionReason,
-
     strength,
 
     relevance,
-
     reliability,
-
     attribution,
-
     contextKnown,
 
     repeated,
-
     generalized,
-
     resilient,
-
     independent,
 
     confidence,
