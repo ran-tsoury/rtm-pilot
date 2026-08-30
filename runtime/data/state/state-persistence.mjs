@@ -837,7 +837,7 @@ export function createStatePersistence(
       context_confidence:
         canonical.contextKnown ===
         true
-          ? "KNOWN"
+          ? "known"
           : "UNKNOWN",
 
       strength:
